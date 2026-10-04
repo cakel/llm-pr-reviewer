@@ -1,6 +1,7 @@
 """Unit tests for engine adapters."""
 
 import unittest
+from unittest.mock import patch
 from review_harness.adapters.claude import ClaudeAdapter
 from review_harness.adapters.kiro import KiroAdapter
 from review_harness.adapters.codex import CodexAdapter
@@ -14,10 +15,16 @@ class TestAdapters(unittest.TestCase):
         self.assertEqual(AgyAdapter().name, "agy")
         self.assertEqual(ClaudeAdapter().name, "claude")
 
-    def test_claude_detect(self):
+    def test_claude_detect_mocked(self):
         claude = ClaudeAdapter()
-        # On this runner, claude binary and ollama are installed and running
-        self.assertTrue(claude.detect())
+        # When claude binary is missing
+        with patch("shutil.which", return_value=None):
+            self.assertFalse(claude.detect())
+
+        # When claude binary is present and ANTHROPIC_API_KEY is provided
+        with patch("shutil.which", return_value="/usr/bin/claude"):
+            with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key", "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}):
+                self.assertTrue(claude.detect())
 
     def test_classify_error(self):
         claude = ClaudeAdapter()
