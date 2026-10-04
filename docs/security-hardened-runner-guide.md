@@ -228,7 +228,7 @@ jobs:
 | **Diff** | Diff 크기 상한 제한 | 최대 200,000 바이트 (초과 시 거부) | [x] |
 | **Diff** | 서브모듈 변조 거부 | `diff --raw` 160000 모드 체인지 차단 | [x] |
 | **Diff** | 민감 경로 변조 감지 | `.github/workflows/**`, `systemd`, `.env` 경고 표시 | [x] |
-| **Diff** | 프롬프트 인젝션 패턴 차단 | `ignore previous instructions` 등 정규식 차단 | [x] |
+| **Diff** | 프롬프트 인젝션 패턴 차단 | 지시 무시(prompt bypass) 시도 등 정규식 차단 | [x] |
 | **OS** | 전용 시스템 계정 격리 | `nologin` 쉘, 사용자 홈 `chmod 700` | [x] |
 | **systemd** | 파일시스템 및 권한 격리 | `NoNewPrivileges=yes`, `ProtectSystem=full`, `PrivateTmp=yes` | [x] |
 | **Network** | 아웃바운드(Egress) 방화벽 | iptables owner 매칭 (Localhost, DNS, 443 외 차단) | [x] |
