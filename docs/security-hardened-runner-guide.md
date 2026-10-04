@@ -102,25 +102,51 @@ sudo systemctl restart actions.runner.<repo>.<runner-name>.service
 ```
 
 ### 3.4. 네트워크 아웃바운드(Egress) 필터링
-러너 프로세스가 임의의 외부 공격자 C2 서버로 통신하는 것을 차단합니다. `iptables`의 `owner` 모듈을 사용하여 `llm-reviewer` UID에만 엄격한 화이트리스트를 적용합니다.
+러너 프로세스가 임의의 외부 공격자 C2 서버로 통신하는 것을 차단합니다. `iptables` 및 `ip6tables`의 `owner` 모듈을 사용하여 `llm-reviewer` UID에 전용 체인 기반의 엄격한 화이트리스트를 적용합니다.
+
+> **주의 (전용 체인 및 순서 보장)**: 기존 호스트의 `OUTPUT` 체인에 이미 광범위한 `ACCEPT` 규칙이 상단에 존재할 경우, 단순 `-A OUTPUT` 규칙은 무력화될 수 있습니다. 따라서 전용 체인(`LLM_EGRESS`)을 생성하고 `OUTPUT`의 최상단(`-I OUTPUT 1`)에 연결하여 순서를 보장합니다. IPv4와 IPv6(`ip6tables`) 양쪽 모두 적용하여 IPv6 우회를 방지합니다.
 
 ```bash
-# 1. 로컬 호스트 허용 (로컬 Ollama LLM http://localhost:11434 연동)
-sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -d 127.0.0.1 -j ACCEPT
-sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -d ::1 -j ACCEPT
+# ---------------------------------------------------------
+# [IPv4] iptables 전용 체인 생성 및 화이트리스트 적용
+# ---------------------------------------------------------
+sudo iptables -N LLM_EGRESS 2>/dev/null || sudo iptables -F LLM_EGRESS
 
-# 2. DNS 질의 허용 (UDP/TCP 53)
-sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -p udp --dport 53 -j ACCEPT
-sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -p tcp --dport 53 -j ACCEPT
+# 1. 로컬 호스트 허용 (로컬 Ollama LLM http://localhost:11434 연동)
+sudo iptables -A LLM_EGRESS -d 127.0.0.1 -j ACCEPT
+
+# 2. DNS 질의 제한 (기본: systemd-resolved 127.0.0.53, 또는 지정된 내부 DNS)
+# 임의 외부 DNS(8.8.8.8 등)를 통한 DNS 터널링 데이터 유출 차단
+sudo iptables -A LLM_EGRESS -p udp -d 127.0.0.53 --dport 53 -j ACCEPT
+sudo iptables -A LLM_EGRESS -p tcp -d 127.0.0.53 --dport 53 -j ACCEPT
 
 # 3. 기존 수립된 연결 허용
-sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -m state --state ESTABLISHED,RELATED -j ACCEPT
+sudo iptables -A LLM_EGRESS -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 # 4. HTTPS (443) 통신 허용 (GitHub API 및 공식 LLM 엔드포인트)
-sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -p tcp --dport 443 -j ACCEPT
+# 고도 보안 환경에서는 Squid/Envoy 포워드 프록시를 경유하도록 설정하고 해당 프록시 IP만 허용 권장
+sudo iptables -A LLM_EGRESS -p tcp --dport 443 -j ACCEPT
 
 # 5. 그 외 모든 외부 아웃바운드 패킷 원천 거부 (리버스 쉘, 임의 포트 데이터 유출 차단)
-sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -j REJECT --reject-with icmp-port-unreachable
+sudo iptables -A LLM_EGRESS -j REJECT --reject-with icmp-port-unreachable
+
+# OUTPUT 체인의 최상단에 llm-reviewer UID 트래픽 연결 (-I로 최상단 삽입)
+sudo iptables -D OUTPUT -m owner --uid-owner llm-reviewer -j LLM_EGRESS 2>/dev/null || true
+sudo iptables -I OUTPUT 1 -m owner --uid-owner llm-reviewer -j LLM_EGRESS
+
+# ---------------------------------------------------------
+# [IPv6] ip6tables 전용 체인 생성 및 IPv6 우회 차단
+# ---------------------------------------------------------
+sudo ip6tables -N LLM_EGRESS 2>/dev/null || sudo ip6tables -F LLM_EGRESS
+
+# 로컬 루프백(::1)만 허용하고 외부 IPv6 통신은 기본 차단
+sudo ip6tables -A LLM_EGRESS -d ::1 -j ACCEPT
+sudo ip6tables -A LLM_EGRESS -m state --state ESTABLISHED,RELATED -j ACCEPT
+sudo ip6tables -A LLM_EGRESS -j REJECT
+
+# OUTPUT 체인 최상단에 연결
+sudo ip6tables -D OUTPUT -m owner --uid-owner llm-reviewer -j LLM_EGRESS 2>/dev/null || true
+sudo ip6tables -I OUTPUT 1 -m owner --uid-owner llm-reviewer -j LLM_EGRESS
 ```
 
 ---
