@@ -1,7 +1,7 @@
 """Unit tests for engine adapters."""
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from review_harness.adapters.claude import ClaudeAdapter
 from review_harness.adapters.kiro import KiroAdapter
 from review_harness.adapters.codex import CodexAdapter
@@ -21,9 +21,11 @@ class TestAdapters(unittest.TestCase):
         with patch("shutil.which", return_value=None):
             self.assertFalse(claude.detect())
 
-        # When claude binary is present and ANTHROPIC_API_KEY is provided
+        # When claude binary is present and --version succeeds
+        mock_result = MagicMock()
+        mock_result.returncode = 0
         with patch("shutil.which", return_value="/usr/bin/claude"):
-            with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test_key", "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}):
+            with patch("subprocess.run", return_value=mock_result):
                 self.assertTrue(claude.detect())
 
     def test_classify_error(self):
