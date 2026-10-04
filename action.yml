@@ -1,0 +1,54 @@
+name: "Multi-CLI LLM PR Reviewer"
+description: "AI PR review with automatic quota fallback across Kiro, Codex, and Agy CLI engines, maintainer gating, and Jules-style history."
+author: "cakel"
+
+inputs:
+  github-token:
+    description: "GitHub token for commenting and PR reviews"
+    required: false
+    default: "${{ github.token }}"
+  engines:
+    description: "Comma-separated list of CLI engines to attempt in order (kiro, codex, agy)"
+    required: false
+    default: "kiro,codex,agy"
+  model:
+    description: "Model override for CLI engines"
+    required: false
+    default: ""
+  effort:
+    description: "Reasoning effort (e.g. low, medium, high)"
+    required: false
+    default: "medium"
+  state-file:
+    description: "Custom path to persist last successful engine"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run LLM Review Harness
+      shell: bash
+      env:
+        GH_TOKEN: "${{ inputs.github-token }}"
+        GITHUB_TOKEN: "${{ inputs.github-token }}"
+        PR_NUMBER: "${{ github.event.pull_request.number || github.event.issue.number }}"
+        BASE_SHA: "${{ github.event.pull_request.base.sha }}"
+        HEAD_SHA: "${{ github.event.pull_request.head.sha }}"
+        PR_AUTHOR: "${{ github.event.pull_request.user.login || github.event.issue.user.login }}"
+        COMMENT_BODY: "${{ github.event.comment.body }}"
+      run: |
+        python3 -m review_harness.main \
+          --repo "${{ github.repository }}" \
+          --pr "${PR_NUMBER}" \
+          --base "${BASE_SHA}" \
+          --head "${HEAD_SHA}" \
+          --actor "${{ github.actor }}" \
+          --pr-author "${PR_AUTHOR}" \
+          --event-name "${{ github.event_name }}" \
+          --comment-body "${COMMENT_BODY}" \
+          --workspace "${{ github.workspace }}" \
+          --engines "${{ inputs.engines }}" \
+          --model "${{ inputs.model }}" \
+          --effort "${{ inputs.effort }}" \
+          ${{ inputs.state-file != '' && format('--state-file {0}', inputs.state-file) || '' }}

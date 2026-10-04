@@ -1,0 +1,44 @@
+name: Reusable AI PR Review
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: "Runner labels to execute review on"
+        type: string
+        default: "self-hosted"
+      engines:
+        description: "Engines in order of preference"
+        type: string
+        default: "kiro,codex,agy"
+      model:
+        description: "Model override"
+        type: string
+        default: ""
+      effort:
+        description: "Effort level"
+        type: string
+        default: "medium"
+
+jobs:
+  review:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout pull request ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Run Review Action
+        uses: cakel/llm-pr-reviewer@main
+        with:
+          github-token: ${{ github.token }}
+          engines: ${{ inputs.engines }}
+          model: ${{ inputs.model }}
+          effort: ${{ inputs.effort }}
