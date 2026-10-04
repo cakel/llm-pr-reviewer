@@ -51,7 +51,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Multi-CLI LLM Reviewer
-        uses: cakel/llm-pr-reviewer@main
+        uses: cakel/llm-pr-reviewer@v1.0.0
         with:
           github-token: ${{ github.token }}
           engines: "kiro,codex,agy,claude"
