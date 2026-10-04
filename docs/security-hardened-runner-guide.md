@@ -31,7 +31,7 @@ GitHub Actions의 셀프 호스티드 러너(Self-Hosted Runner)는 클라우드
                  │ (Success)
   (Layer 3) Diff & 민감 경로 가드 (200KB 상한, 인젝션 마커 검사, .github/workflows 감지)
                  │ (Safe)
-  (Layer 4) OS 전용 격리 계정 (ptreview: 홈 디렉토리 700 격리)
+  (Layer 4) OS 전용 격리 계정 (llm-reviewer: 홈 디렉토리 700 격리)
                  │
   (Layer 5) systemd 리눅스 커널 샌드박싱 (ProtectSystem, PrivateTmp, NoNewPrivileges)
                  │
@@ -51,17 +51,17 @@ GitHub Actions의 셀프 호스티드 러너(Self-Hosted Runner)는 클라우드
 
 ```bash
 # 리뷰 전용 시스템 계정 생성 (로그인 쉘 비활성화)
-sudo useradd -r -s /usr/sbin/nologin -d /var/lib/ptreview -m ptreview
+sudo useradd -r -s /usr/sbin/nologin -d /var/lib/llm-reviewer -m llm-reviewer
 
-# 일반 사용자 홈 디렉토리 권한 잠금 (ptreview 사용자가 절대 읽지 못하도록 설정)
+# 일반 사용자 홈 디렉토리 권한 잠금 (llm-reviewer 사용자가 절대 읽지 못하도록 설정)
 chmod 700 /home/cakel
 ```
 
 ### 3.2. 러너 디렉토리 권한 설정
 ```bash
 sudo mkdir -p /opt/actions-runner-profittrailer-isolated
-sudo chown -R ptreview:ptreview /opt/actions-runner-profittrailer-isolated
-sudo chown -R ptreview:ptreview /var/lib/ptreview
+sudo chown -R llm-reviewer:llm-reviewer /opt/actions-runner-profittrailer-isolated
+sudo chown -R llm-reviewer:llm-reviewer /var/lib/llm-reviewer
 ```
 
 ### 3.3. systemd 커널 레벨 샌드박싱 (`override.conf`)
@@ -92,7 +92,7 @@ ProtectControlGroups=yes
 ProtectKernelModules=yes
 
 # 쓰기 허용 경로 엄격히 한정
-ReadWritePaths=/opt/actions-runner-profittrailer-isolated /var/lib/ptreview
+ReadWritePaths=/opt/actions-runner-profittrailer-isolated /var/lib/llm-reviewer
 ```
 
 적용:
@@ -102,25 +102,25 @@ sudo systemctl restart actions.runner.<repo>.<runner-name>.service
 ```
 
 ### 3.4. 네트워크 아웃바운드(Egress) 필터링
-러너 프로세스가 임의의 외부 공격자 C2 서버로 통신하는 것을 차단합니다. `iptables`의 `owner` 모듈을 사용하여 `ptreview` UID에만 엄격한 화이트리스트를 적용합니다.
+러너 프로세스가 임의의 외부 공격자 C2 서버로 통신하는 것을 차단합니다. `iptables`의 `owner` 모듈을 사용하여 `llm-reviewer` UID에만 엄격한 화이트리스트를 적용합니다.
 
 ```bash
 # 1. 로컬 호스트 허용 (로컬 Ollama LLM http://localhost:11434 연동)
-sudo iptables -A OUTPUT -m owner --uid-owner ptreview -d 127.0.0.1 -j ACCEPT
-sudo iptables -A OUTPUT -m owner --uid-owner ptreview -d ::1 -j ACCEPT
+sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -d 127.0.0.1 -j ACCEPT
+sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -d ::1 -j ACCEPT
 
 # 2. DNS 질의 허용 (UDP/TCP 53)
-sudo iptables -A OUTPUT -m owner --uid-owner ptreview -p udp --dport 53 -j ACCEPT
-sudo iptables -A OUTPUT -m owner --uid-owner ptreview -p tcp --dport 53 -j ACCEPT
+sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -p udp --dport 53 -j ACCEPT
+sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -p tcp --dport 53 -j ACCEPT
 
 # 3. 기존 수립된 연결 허용
-sudo iptables -A OUTPUT -m owner --uid-owner ptreview -m state --state ESTABLISHED,RELATED -j ACCEPT
+sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 # 4. HTTPS (443) 통신 허용 (GitHub API 및 공식 LLM 엔드포인트)
-sudo iptables -A OUTPUT -m owner --uid-owner ptreview -p tcp --dport 443 -j ACCEPT
+sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -p tcp --dport 443 -j ACCEPT
 
 # 5. 그 외 모든 외부 아웃바운드 패킷 원천 거부 (리버스 쉘, 임의 포트 데이터 유출 차단)
-sudo iptables -A OUTPUT -m owner --uid-owner ptreview -j REJECT --reject-with icmp-port-unreachable
+sudo iptables -A OUTPUT -m owner --uid-owner llm-reviewer -j REJECT --reject-with icmp-port-unreachable
 ```
 
 ---
@@ -174,7 +174,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64, profittrailer-review-isolated]
     timeout-minutes: 15
     env:
-      KIRO_HOME: /var/lib/ptreview/.kiro
+      KIRO_HOME: /var/lib/llm-reviewer/.kiro
     steps:
       - name: Checkout pull request ref
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
