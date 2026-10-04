@@ -84,11 +84,10 @@ class DiffGuard:
         if re.search(r"^:160000 ", raw_diff, re.MULTILINE):
             return False, "Submodule change detected; refusing automated review."
 
-        # 3. Attributes check
-        for commit in [self.base_sha, self.head_sha]:
-            tree = self._git("ls-tree", "-r", "--name-only", commit)
-            if any(line.endswith(".gitattributes") for line in tree.splitlines()):
-                return False, f".gitattributes present in commit {commit[:7]}; refusing review."
+        # 3. Attributes check (reject PRs modifying .gitattributes)
+        diff_names = self._git("diff", "--name-only", f"{self.base_sha}...{self.head_sha}")
+        if any(line.strip().endswith(".gitattributes") for line in diff_names.splitlines()):
+            return False, "PR modifies .gitattributes; refusing automated review."
 
         # 4. Review control pattern in added lines
         for line in diff_content.splitlines():
