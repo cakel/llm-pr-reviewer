@@ -85,9 +85,10 @@ class DiffGuard:
             return False, "Submodule change detected; refusing automated review."
 
         # 3. Attributes check (reject PRs modifying .gitattributes)
-        diff_names = self._git("diff", "--name-only", f"{self.base_sha}...{self.head_sha}")
-        if any(line.strip().endswith(".gitattributes") for line in diff_names.splitlines()):
-            return False, "PR modifies .gitattributes; refusing automated review."
+        diff_names_z = self._git("diff", "--name-only", "-z", f"{self.base_sha}...{self.head_sha}")
+        for path in diff_names_z.split("\0"):
+            if path.strip().endswith(".gitattributes"):
+                return False, "PR modifies .gitattributes; refusing automated review."
 
         # 4. Review control pattern in added lines
         for line in diff_content.splitlines():

@@ -48,10 +48,21 @@ class TestDiffGuard(unittest.TestCase):
     def test_gitattributes_modification_rejected(self):
         guard = DiffGuard(workspace=".", base_sha="HEAD~1", head_sha="HEAD")
         with unittest.mock.patch.object(guard, "_git") as mock_git:
-            # Submodule check returns empty, diff --name-only returns .gitattributes
+            # Submodule check returns empty, diff --name-only -z returns .gitattributes
             mock_git.side_effect = [
                 "",  # diff --raw
-                ".gitattributes\nsrc/index.js\n",  # diff --name-only
+                ".gitattributes\0src/index.js\0",  # diff --name-only -z
+            ]
+            safe, msg = guard.verify_safety("diff --git a/foo b/foo\n+line")
+            self.assertFalse(safe)
+            self.assertIn("PR modifies .gitattributes", msg)
+
+    def test_gitattributes_unicode_path_rejected(self):
+        guard = DiffGuard(workspace=".", base_sha="HEAD~1", head_sha="HEAD")
+        with unittest.mock.patch.object(guard, "_git") as mock_git:
+            mock_git.side_effect = [
+                "",  # diff --raw
+                "한글경로/.gitattributes\0src/index.js\0",  # diff --name-only -z
             ]
             safe, msg = guard.verify_safety("diff --git a/foo b/foo\n+line")
             self.assertFalse(safe)
@@ -60,10 +71,10 @@ class TestDiffGuard(unittest.TestCase):
     def test_gitattributes_unmodified_allowed(self):
         guard = DiffGuard(workspace=".", base_sha="HEAD~1", head_sha="HEAD")
         with unittest.mock.patch.object(guard, "_git") as mock_git:
-            # Submodule check returns empty, diff --name-only returns ordinary files
+            # Submodule check returns empty, diff --name-only -z returns ordinary files
             mock_git.side_effect = [
                 "",  # diff --raw
-                "src/index.js\npackage.json\n",  # diff --name-only
+                "src/index.js\0package.json\0",  # diff --name-only -z
             ]
             safe, msg = guard.verify_safety("diff --git a/foo b/foo\n+line")
             self.assertTrue(safe)
