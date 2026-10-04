@@ -6,11 +6,11 @@ on:
       runner:
         description: 'Runner for precheck job (ubuntu-latest for public repos, self-hosted for private repos)'
         type: string
-        default: 'ubuntu-latest'
+        default: '["ubuntu-latest"]'
       review-runner:
         description: 'Runner for ai-review job (must have CLI auth)'
         type: string
-        default: 'self-hosted,llm-reviewer'
+        default: '["self-hosted", "llm-reviewer"]'
       engines:
         description: 'Comma-separated list of CLI engines to attempt'
         type: string
@@ -43,7 +43,7 @@ jobs:
       (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
        (github.event.comment.body == '/review' || startsWith(github.event.comment.body, '/review ')))
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 3
     outputs:
       pr_num: ${{ steps.validate.outputs.pr_num }}
@@ -92,11 +92,10 @@ jobs:
             exit 1
           fi
 
-          # Block fork PRs on self-hosted runners
-          HEAD_OWNER=$(echo "$PR_INFO" | jq -r .headRepositoryOwner.login)
-          REPO_OWNER="${REPO_NAME%%/*}"
-          if [ "$HEAD_OWNER" != "$REPO_OWNER" ]; then
-            echo "::error::Fork PRs are not allowed for security reasons"
+          # Block fork PRs on self-hosted runners (full repo name comparison)
+          HEAD_REPO=$(gh pr view "$PR_NUM" --repo "$REPO_NAME" --json headRepository --jq .headRepository.nameWithOwner)
+          if [ "$HEAD_REPO" != "$REPO_NAME" ]; then
+            echo "::error::Fork PRs are not allowed for security reasons (head: $HEAD_REPO, expected: $REPO_NAME)"
             exit 1
           fi
 
@@ -113,7 +112,7 @@ jobs:
   ai-review:
     needs: precheck
     if: needs.precheck.outputs.should_review == 'true'
-    runs-on: ${{ fromJSON(format('["{0}"]', inputs.review-runner)) }}
+    runs-on: ${{ fromJSON(inputs.review-runner) }}
     timeout-minutes: 15
     steps:
       - name: Checkout PR head

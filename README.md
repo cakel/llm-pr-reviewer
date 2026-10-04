@@ -94,7 +94,7 @@ jobs:
   ai-review:
     uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@main
     with:
-      runner: 'self-hosted,llm-reviewer'  # precheck도 self-hosted 사용 (분 수 절약)
+      runner: '["self-hosted", "llm-reviewer"]'  # precheck도 self-hosted 사용 (분 수 절약)
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 ```
