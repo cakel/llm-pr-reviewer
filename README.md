@@ -58,6 +58,58 @@ jobs:
 ```
 
 ---
+## 🔄 Reusable Workflow (권장)
+
+precheck(권한 검증) + ai-review가 포함된 재사용 가능한 워크플로우입니다.
+
+### 공개 저장소
+```yaml
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+  issue_comment:
+    types: [created]
+
+jobs:
+  ai-review:
+    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@main
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+    # runner 기본값: ubuntu-latest (precheck), self-hosted (ai-review)
+```
+
+### 비공개 저장소
+```yaml
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+  issue_comment:
+    types: [created]
+
+jobs:
+  ai-review:
+    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@main
+    with:
+      runner: 'self-hosted,llm-reviewer'  # precheck도 self-hosted 사용 (분 수 절약)
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Inputs
+
+| Input | 기본값 | 설명 |
+|-------|--------|------|
+| `runner` | `ubuntu-latest` | precheck job 러너 (공개: ubuntu-latest, 비공개: self-hosted) |
+| `review-runner` | `self-hosted,llm-reviewer` | ai-review job 러너 (CLI 인증 필요) |
+| `engines` | `kiro,codex,agy,claude` | 시도할 CLI 엔진 목록 |
+| `effort` | `medium` | 추론 노력 수준 |
+
+
+---
 
 ## 📚 상세 문서 (Documentation)
 
