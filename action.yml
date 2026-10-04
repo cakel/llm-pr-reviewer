@@ -8,9 +8,9 @@ inputs:
     required: false
     default: "${{ github.token }}"
   engines:
-    description: "Comma-separated list of CLI engines to attempt in order (kiro, codex, agy)"
+    description: "Comma-separated list of CLI engines to attempt in order (kiro, codex, agy, claude)"
     required: false
-    default: "kiro,codex,agy"
+    default: "kiro,codex,agy,claude"
   model:
     description: "Model override for CLI engines"
     required: false

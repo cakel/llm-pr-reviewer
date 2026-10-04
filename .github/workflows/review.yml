@@ -10,7 +10,7 @@ on:
       engines:
         description: "Engines in order of preference"
         type: string
-        default: "kiro,codex,agy"
+        default: "kiro,codex,agy,claude"
       model:
         description: "Model override"
         type: string

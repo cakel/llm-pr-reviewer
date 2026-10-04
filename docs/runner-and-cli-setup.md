@@ -59,3 +59,21 @@ agy --version
 # 모델 목록 정상 조회 확인
 agy models
 ```
+
+### D. Claude Code (`claude`) + Ollama / Cloud 모델 연동
+Claude Code는 Anthropic의 공식 CLI이지만, `ANTHROPIC_BASE_URL` 환경 변수를 통해 Ollama의 Anthropic 호환 API(`/v1/messages`)와 직접 연결하여 저렴한 클라우드/로컬 모델을 활용할 수 있습니다.
+
+```bash
+# 1. Claude Code 버전 확인
+claude --version
+
+# 2. Ollama 실행 및 모델 확인 (예: gemma4:31b-cloud)
+curl -s http://localhost:11434/api/tags
+
+# 3. 환경 변수 설정 (기본값으로 자동 인식됨)
+export ANTHROPIC_BASE_URL="http://localhost:11434"
+export ANTHROPIC_API_KEY="ollama"
+
+# 4. 테스트 실행 (tools 비활성화로 텍스트 리뷰만 수행)
+claude -p "Say hello in Korean" --model "gemma4:31b-cloud" --tools ""
+```

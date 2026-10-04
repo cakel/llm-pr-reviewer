@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .adapters.agy import AgyAdapter
+from .adapters.claude import ClaudeAdapter
 from .adapters.codex import CodexAdapter
 from .adapters.kiro import KiroAdapter
 from .comment_manager import CommentManager
@@ -19,6 +20,7 @@ AVAILABLE_ADAPTERS = {
     "kiro": KiroAdapter(),
     "codex": CodexAdapter(),
     "agy": AgyAdapter(),
+    "claude": ClaudeAdapter(),
 }
 
 
@@ -33,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--event-name", default=os.environ.get("GITHUB_EVENT_NAME", "pull_request"))
     parser.add_argument("--comment-body", default=os.environ.get("COMMENT_BODY", ""))
     parser.add_argument("--workspace", default=os.environ.get("GITHUB_WORKSPACE", "."))
-    parser.add_argument("--engines", default="kiro,codex,agy")
+    parser.add_argument("--engines", default="kiro,codex,agy,claude")
     parser.add_argument("--model", default=None)
     parser.add_argument("--effort", default="medium")
     parser.add_argument("--state-file", default=None)
