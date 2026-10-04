@@ -42,6 +42,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--effort", default="medium")
     parser.add_argument("--state-file", default=None)
     parser.add_argument("--diff-file", default=None, help="Path to pre-verified diff file")
+    parser.add_argument("--output-file", default=None, help="Save review comment markdown to specified file path")
+    parser.add_argument("--post-comment", action="store_true", default=True, help="Post review comments directly to GitHub PR")
+    parser.add_argument("--no-post-comment", action="store_false", dest="post_comment", help="Do not post comments to GitHub; save output to file only")
     parser.add_argument("--submit-review", action="store_true", default=True, help="Submit formal PR request-changes review on blocking issues")
     parser.add_argument("--no-submit-review", action="store_false", dest="submit_review", help="Skip formal PR review submission and delegate gate to workflow")
     return parser.parse_args()
@@ -188,26 +191,38 @@ def main() -> int:
     effort_tag = args.effort if args.effort else "medium"
 
     if is_fix_mode:
-        try:
-            comment_mgr.post_fix_comment(
-                body=cleaned_review,
-                engine_name=chosen_engine,
-                head_sha=args.head,
-                model=model_tag,
-                effort=effort_tag,
-            )
-            print(f"AI fix suggestions posted for commit {args.head[:7]}.")
-            gh_output = os.environ.get("GITHUB_OUTPUT")
-            if gh_output:
-                try:
-                    with open(gh_output, "a", encoding="utf-8") as f:
-                        f.write("decision=fix_suggested\n")
-                        f.write("blocking=0\n")
-                except Exception:
-                    pass
-        except Exception as exc:
-            print(f"Failed to post fix comment: {exc}", file=sys.stderr)
-            return 1
+        if args.output_file:
+            try:
+                Path(args.output_file).parent.mkdir(parents=True, exist_ok=True)
+                Path(args.output_file).write_text(cleaned_review, encoding="utf-8")
+                print(f"Saved fix suggestions markdown to {args.output_file}")
+            except Exception as exc:
+                print(f"::warning::Failed to save output-file: {exc}")
+
+        if args.post_comment:
+            try:
+                comment_mgr.post_fix_comment(
+                    body=cleaned_review,
+                    engine_name=chosen_engine,
+                    head_sha=args.head,
+                    model=model_tag,
+                    effort=effort_tag,
+                )
+                print(f"AI fix suggestions posted for commit {args.head[:7]}.")
+            except Exception as exc:
+                print(f"Failed to post fix comment: {exc}", file=sys.stderr)
+                return 1
+        else:
+            print("PR fix comment posting skipped (--no-post-comment).")
+
+        gh_output = os.environ.get("GITHUB_OUTPUT")
+        if gh_output:
+            try:
+                with open(gh_output, "a", encoding="utf-8") as f:
+                    f.write("decision=fix_suggested\n")
+                    f.write("blocking=0\n")
+            except Exception:
+                pass
         return 0
 
     # 7. Classify Decision
@@ -245,13 +260,24 @@ def main() -> int:
         f"<sub>Commit `{args.head[:7]}` · engine `{chosen_engine}` ({model_tag}, {effort_tag}) · [workflow run]({run_url}) · 새 커밋이 push되면 이 코멘트가 갱신됩니다.</sub>\n"
     )
 
+    if args.output_file:
+        try:
+            Path(args.output_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.output_file).write_text(comment_body, encoding="utf-8")
+            print(f"Saved review comment markdown to {args.output_file}")
+        except Exception as exc:
+            print(f"::warning::Failed to save output-file: {exc}")
+
     # 8. Post Comment and Collapse Older Ones
-    try:
-        comment_mgr.post_and_collapse_reviews(head_sha=args.head, review_comment_markdown=comment_body)
-        print("Review comment posted and previous reviews collapsed.")
-    except Exception as exc:
-        print(f"Failed to post review comment: {exc}", file=sys.stderr)
-        return 1
+    if args.post_comment:
+        try:
+            comment_mgr.post_and_collapse_reviews(head_sha=args.head, review_comment_markdown=comment_body)
+            print("Review comment posted and previous reviews collapsed.")
+        except Exception as exc:
+            print(f"Failed to post review comment: {exc}", file=sys.stderr)
+            return 1
+    else:
+        print("PR review comment posting skipped (--no-post-comment).")
 
     # 9. Gate Block if Changes Requested
     if decision == "request_changes":

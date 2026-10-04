@@ -98,6 +98,10 @@ def sanitize_and_parse_review(
     review = re.sub(r"https?://\S+", "[external URL removed]", review)
 
     matches = list(re.finditer(rf"{re.escape(summary_key)}=(\{{[^\n]+\}})", review))
+    if not matches:
+        # Fallback if LLM printed the summary JSON without the summary_key prefix
+        matches = list(re.finditer(r'(\{"critical"\s*:\s*\d+\s*,\s*"major"\s*:\s*\d+\s*,\s*"minor"\s*:\s*\d+\s*,\s*"nit"\s*:\s*\d+\})', review))
+
     match = matches[-1] if matches else None
 
     counts = {"critical": 0, "major": 0, "minor": 0, "nit": 0}

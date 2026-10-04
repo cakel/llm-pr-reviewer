@@ -26,6 +26,14 @@ inputs:
   submit-review:
     description: "Whether to submit a formal request-changes review (default true; set false to delegate decision to workflow gate)"
     required: false
+  post-comment:
+    description: "Whether to post review comments directly to the PR (default true; set false when workflow handles posting)"
+    required: false
+    default: "true"
+  output-file:
+    description: "Path to write review comment markdown output"
+    required: false
+    default: ""
   diff-file:
     description: "Path to pre-verified diff file (overrides live git diff if provided)"
     required: false
@@ -69,5 +77,7 @@ runs:
           --model "${{ inputs.model }}" \
           --effort "${{ inputs.effort }}" \
           ${{ inputs.diff-file != '' && format('--diff-file {0}', inputs.diff-file) || '' }} \
+          ${{ inputs.output-file != '' && format('--output-file {0}', inputs.output-file) || '' }} \
+          ${{ inputs.post-comment == 'false' && '--no-post-comment' || '--post-comment' }} \
           ${{ inputs.submit-review == 'false' && '--no-submit-review' || '--submit-review' }} \
           ${{ inputs.state-file != '' && format('--state-file {0}', inputs.state-file) || '' }}
