@@ -116,7 +116,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           ref: ${{ needs.precheck.outputs.head_sha }}
           fetch-depth: 0
@@ -132,7 +132,9 @@ jobs:
           echo "Checkout verified: $CHECKOUT_SHA"
 
       - name: Run LLM PR Reviewer
-        uses: cakel/llm-pr-reviewer@main
+        uses: cakel/llm-pr-reviewer@main  # TODO: pin to SHA after release
+        # Security note: This action runs in the same runner context.
+        # For maximum isolation, use a dedicated runner with minimal permissions.
         with:
           github-token: ${{ secrets.token }}
           engines: ${{ inputs.engines }}

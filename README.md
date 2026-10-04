@@ -72,6 +72,11 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
 jobs:
   ai-review:
     uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@main
@@ -90,6 +95,11 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
 jobs:
   ai-review:
     uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@main
@@ -98,6 +108,23 @@ jobs:
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+
+### 보안 고려사항
+
+**Self-hosted 러너 격리:**
+- AI 리뷰는 CLI 인증이 있는 self-hosted 러너에서 실행됩니다
+- PR 콘텐츠가 체크아웃되므로, 악성 설정 파일이 CLI 동작에 영향을 줄 수 있습니다
+- **권장**: 리뷰 전용 러너를 별도로 구성하고, 최소 권한 원칙 적용
+- **권장**: 민감한 인증 정보는 러너 환경이 아닌 별도 시크릿으로 관리
+
+**Fork PR 차단:**
+- Fork PR은 precheck에서 자동으로 차단됩니다
+- 동일 저장소의 브랜치만 리뷰 대상
+
+**SHA 핀:**
+- 프로덕션 환경에서는 `@main` 대신 commit SHA로 고정 권장
+- 예: `uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@<SHA>`
 
 ### Inputs
 
