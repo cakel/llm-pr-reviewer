@@ -87,11 +87,11 @@ jobs:
 프로덕션 환경에서는 태그 또는 commit SHA로 고정을 권장합니다:
 
 ```yaml
-# 태그 사용 (권장)
+# SHA 사용 (권장)
 uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
 
 # SHA 사용 (가장 안전)
-uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845...
+uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
 ```
 
 ### 권한 요구사항
