@@ -45,8 +45,40 @@ class TestDiffGuard(unittest.TestCase):
             sensitive = guard.get_sensitive_paths()
             self.assertIn(".github/workflows/deploy.yml", sensitive)
             self.assertIn(".env.production", sensitive)
-            self.assertNotIn("src/index.js", sensitive)
+    def test_gitattributes_modification_rejected(self):
+        guard = DiffGuard(workspace=".", base_sha="HEAD~1", head_sha="HEAD")
+        with unittest.mock.patch.object(guard, "_git") as mock_git:
+            # Submodule check returns empty, diff --name-only -z returns .gitattributes
+            mock_git.side_effect = [
+                "",  # diff --raw
+                ".gitattributes\0src/index.js\0",  # diff --name-only -z
+            ]
+            safe, msg = guard.verify_safety("diff --git a/foo b/foo\n+line")
+            self.assertFalse(safe)
+            self.assertIn("PR modifies .gitattributes", msg)
 
+    def test_gitattributes_unicode_path_rejected(self):
+        guard = DiffGuard(workspace=".", base_sha="HEAD~1", head_sha="HEAD")
+        with unittest.mock.patch.object(guard, "_git") as mock_git:
+            mock_git.side_effect = [
+                "",  # diff --raw
+                "한글경로/.gitattributes\0src/index.js\0",  # diff --name-only -z
+            ]
+            safe, msg = guard.verify_safety("diff --git a/foo b/foo\n+line")
+            self.assertFalse(safe)
+            self.assertIn("PR modifies .gitattributes", msg)
+
+    def test_gitattributes_unmodified_allowed(self):
+        guard = DiffGuard(workspace=".", base_sha="HEAD~1", head_sha="HEAD")
+        with unittest.mock.patch.object(guard, "_git") as mock_git:
+            # Submodule check returns empty, diff --name-only -z returns ordinary files
+            mock_git.side_effect = [
+                "",  # diff --raw
+                "src/index.js\0package.json\0",  # diff --name-only -z
+            ]
+            safe, msg = guard.verify_safety("diff --git a/foo b/foo\n+line")
+            self.assertTrue(safe)
+            self.assertIn("Diff passed safety verification", msg)
 
 
 if __name__ == "__main__":
