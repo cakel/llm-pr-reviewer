@@ -1,9 +1,8 @@
-"""Claude Code CLI adapter with Ollama / Anthropic endpoint support."""
+"""Claude Code CLI adapter with standard Anthropic auth and custom endpoint support."""
 
 import os
 import shutil
 import subprocess
-import urllib.request
 from .base import EngineAdapter
 
 
@@ -14,23 +13,9 @@ class ClaudeAdapter(EngineAdapter):
         self.default_ollama_model = default_ollama_model
 
     def detect(self) -> bool:
+        """Check if claude CLI binary is installed and executable."""
         if not shutil.which("claude"):
             return False
-
-        # Check if Ollama endpoint is reachable or ANTHROPIC_API_KEY is set
-        base_url = os.environ.get("ANTHROPIC_BASE_URL", "http://localhost:11434")
-        if "11434" in base_url or "localhost" in base_url:
-            try:
-                req = urllib.request.Request(f"{base_url}/api/tags", headers={"User-Agent": "curl/7.88.1"})
-                with urllib.request.urlopen(req, timeout=3) as resp:
-                    return resp.status == 200
-            except Exception:
-                pass
-
-        # Otherwise check if claude has existing auth or API key
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            return True
-
         try:
             res = subprocess.run(
                 ["claude", "--version"],
@@ -51,15 +36,17 @@ class ClaudeAdapter(EngineAdapter):
         timeout_sec: int = 300,
     ) -> tuple[str, int]:
         env = os.environ.copy()
-        base_url = env.get("ANTHROPIC_BASE_URL", "http://localhost:11434")
-        env["ANTHROPIC_BASE_URL"] = base_url
-        if "ANTHROPIC_API_KEY" not in env:
-            env["ANTHROPIC_API_KEY"] = "ollama"
-        env["CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT"] = "1"
 
+        # If user explicitly configured ANTHROPIC_BASE_URL (e.g. Ollama or custom proxy)
+        base_url = env.get("ANTHROPIC_BASE_URL", "")
         chosen_model = model
-        if not chosen_model and ("11434" in base_url or "localhost" in base_url):
-            chosen_model = self.default_ollama_model
+
+        if base_url and ("11434" in base_url or "localhost" in base_url):
+            if "ANTHROPIC_API_KEY" not in env:
+                env["ANTHROPIC_API_KEY"] = "ollama"
+            env["CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT"] = "1"
+            if not chosen_model:
+                chosen_model = self.default_ollama_model
 
         cmd = [
             "claude", "-p", prompt,
@@ -86,3 +73,18 @@ class ClaudeAdapter(EngineAdapter):
             return "Claude execution timed out", 124
         except Exception as exc:
             return f"Claude execution failed: {exc}", 1
+
+    def classify_error(self, output: str, returncode: int) -> str:
+        lowered = output.lower()
+        if any(term in lowered for term in [
+            "oauth session expired",
+            "failed to authenticate",
+            "not logged in",
+            "invalid api key",
+            "unauthorized",
+            "auth",
+            "login required",
+            "fix external api key",
+        ]):
+            return "auth_failed"
+        return super().classify_error(output, returncode)
