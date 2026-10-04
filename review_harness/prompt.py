@@ -117,8 +117,9 @@ def sanitize_and_parse_review(
     review = ansi.sub("", raw_output)
     review = "".join(char for char in review if char in "\n\r\t" or ord(char) >= 32)
     # Neutralize HTML tags without dropping readable text
-    review = review.replace("<", "&lt;")
+    review = review.replace("<", "&lt;").replace(">", "&gt;")
     # Strip leading quote marker if CLI prints one
+    review = re.sub(r"\A\s*&gt;[ \t]?", "", review)
     review = re.sub(r"\A\s*>[ \t]?", "", review)
     review = re.sub(r"!\[[^\]]*\]\([^)]*\)", "[external image removed]", review)
     review = re.sub(r"https?://\S+", "[external URL removed]", review)
