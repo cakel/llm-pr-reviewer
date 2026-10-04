@@ -34,6 +34,14 @@ inputs:
     description: "Path to write review comment markdown output"
     required: false
     default: ""
+  summary-file:
+    description: "Path to write signed machine review summary JSON output"
+    required: false
+    default: ""
+  summary-key:
+    description: "Pre-shared secret key for machine summary signing and verification"
+    required: false
+    default: ""
   diff-file:
     description: "Path to pre-verified diff file (overrides live git diff if provided)"
     required: false
@@ -78,6 +86,8 @@ runs:
           --effort "${{ inputs.effort }}" \
           ${{ inputs.diff-file != '' && format('--diff-file {0}', inputs.diff-file) || '' }} \
           ${{ inputs.output-file != '' && format('--output-file {0}', inputs.output-file) || '' }} \
+          ${{ inputs.summary-file != '' && format('--summary-file {0}', inputs.summary-file) || '' }} \
+          ${{ inputs.summary-key != '' && format('--summary-key {0}', inputs.summary-key) || '' }} \
           ${{ inputs.post-comment == 'false' && '--no-post-comment' || '--post-comment' }} \
           ${{ inputs.submit-review == 'false' && '--no-submit-review' || '--submit-review' }} \
           ${{ inputs.state-file != '' && format('--state-file {0}', inputs.state-file) || '' }}

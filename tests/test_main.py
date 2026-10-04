@@ -24,6 +24,12 @@ class TestMainArgs(unittest.TestCase):
             args = parse_args()
             self.assertEqual(args.diff_file, "/tmp/test.diff")
 
+    def test_summary_flags(self):
+        with patch("sys.argv", ["main", "--repo", "owner/repo", "--pr", "1", "--summary-key", "SECRET_KEY_123", "--summary-file", "/tmp/summary.json"]):
+            args = parse_args()
+            self.assertEqual(args.summary_key, "SECRET_KEY_123")
+            self.assertEqual(args.summary_file, "/tmp/summary.json")
+
 
 if __name__ == "__main__":
     unittest.main()

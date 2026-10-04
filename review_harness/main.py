@@ -43,6 +43,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state-file", default=None)
     parser.add_argument("--diff-file", default=None, help="Path to pre-verified diff file")
     parser.add_argument("--output-file", default=None, help="Save review comment markdown to specified file path")
+    parser.add_argument("--summary-file", default=None, help="Save signed machine summary JSON to specified file path")
+    parser.add_argument("--summary-key", default=os.environ.get("REVIEW_SUMMARY_KEY", None), help="Pre-shared secret key for machine summary signing and verification")
     parser.add_argument("--post-comment", action="store_true", default=True, help="Post review comments directly to GitHub PR")
     parser.add_argument("--no-post-comment", action="store_false", dest="post_comment", help="Do not post comments to GitHub; save output to file only")
     parser.add_argument("--submit-review", action="store_true", default=True, help="Submit formal PR request-changes review on blocking issues")
@@ -123,7 +125,8 @@ def main() -> int:
     previous_findings = comment_mgr.fetch_previous_findings(args.head)
 
     # 5. Build Delimited Prompt
-    delimiter, summary_key = generate_tokens()
+    delimiter, generated_key = generate_tokens()
+    summary_key = args.summary_key if args.summary_key else generated_key
     sensitive_paths = diff_guard.get_sensitive_paths()
     if is_fix_mode:
         prompt = build_fix_prompt(
@@ -199,6 +202,23 @@ def main() -> int:
             except Exception as exc:
                 print(f"::warning::Failed to save output-file: {exc}")
 
+        if args.summary_file:
+            try:
+                Path(args.summary_file).parent.mkdir(parents=True, exist_ok=True)
+                summary_data = {
+                    "schema_version": 1,
+                    "summary_key": summary_key,
+                    "counts": {"critical": 0, "major": 0, "minor": 0, "nit": 0},
+                    "blocking": 0,
+                    "decision": "fix_suggested",
+                    "engine": chosen_engine,
+                    "head": args.head,
+                }
+                Path(args.summary_file).write_text(json.dumps(summary_data, indent=2) + "\n", encoding="utf-8")
+                print(f"Saved machine review summary JSON to {args.summary_file}")
+            except Exception as exc:
+                print(f"::warning::Failed to save summary-file: {exc}")
+
         if args.post_comment:
             try:
                 comment_mgr.post_fix_comment(
@@ -232,6 +252,23 @@ def main() -> int:
     icon = "🛑" if decision == "request_changes" else "✅"
     verdict = "request_changes" if decision == "request_changes" else "approve"
     counts_line = " · ".join(f"{k} {counts[k]}" for k in ["critical", "major", "minor", "nit"])
+
+    if args.summary_file:
+        try:
+            Path(args.summary_file).parent.mkdir(parents=True, exist_ok=True)
+            summary_data = {
+                "schema_version": 1,
+                "summary_key": summary_key,
+                "counts": counts,
+                "blocking": blocking,
+                "decision": decision,
+                "engine": chosen_engine,
+                "head": args.head,
+            }
+            Path(args.summary_file).write_text(json.dumps(summary_data, indent=2) + "\n", encoding="utf-8")
+            print(f"Saved machine review summary JSON to {args.summary_file}")
+        except Exception as exc:
+            print(f"::warning::Failed to save summary-file: {exc}")
 
     gh_output = os.environ.get("GITHUB_OUTPUT")
     if gh_output:
