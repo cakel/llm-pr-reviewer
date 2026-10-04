@@ -30,6 +30,7 @@ runs:
     - name: Run LLM Review Harness
       shell: bash
       env:
+        PYTHONPATH: "${{ github.action_path }}:${{ env.PYTHONPATH }}"
         GH_TOKEN: "${{ inputs.github-token }}"
         GITHUB_TOKEN: "${{ inputs.github-token }}"
         PR_NUMBER: "${{ github.event.pull_request.number || github.event.issue.number }}"
