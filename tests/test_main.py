@@ -19,6 +19,11 @@ class TestMainArgs(unittest.TestCase):
             args = parse_args()
             self.assertFalse(args.submit_review)
 
+    def test_diff_file_flag(self):
+        with patch("sys.argv", ["main", "--repo", "owner/repo", "--pr", "1", "--diff-file", "/tmp/test.diff"]):
+            args = parse_args()
+            self.assertEqual(args.diff_file, "/tmp/test.diff")
+
 
 if __name__ == "__main__":
     unittest.main()

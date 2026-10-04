@@ -26,7 +26,10 @@ inputs:
   submit-review:
     description: "Whether to submit a formal request-changes review (default true; set false to delegate decision to workflow gate)"
     required: false
-    default: "true"
+  diff-file:
+    description: "Path to pre-verified diff file (overrides live git diff if provided)"
+    required: false
+    default: ""
 
 outputs:
   decision:
@@ -65,5 +68,6 @@ runs:
           --engines "${{ inputs.engines }}" \
           --model "${{ inputs.model }}" \
           --effort "${{ inputs.effort }}" \
+          ${{ inputs.diff-file != '' && format('--diff-file {0}', inputs.diff-file) || '' }} \
           ${{ inputs.submit-review == 'false' && '--no-submit-review' || '--submit-review' }} \
           ${{ inputs.state-file != '' && format('--state-file {0}', inputs.state-file) || '' }}

@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default=None)
     parser.add_argument("--effort", default="medium")
     parser.add_argument("--state-file", default=None)
+    parser.add_argument("--diff-file", default=None, help="Path to pre-verified diff file")
     parser.add_argument("--submit-review", action="store_true", default=True, help="Submit formal PR request-changes review on blocking issues")
     parser.add_argument("--no-submit-review", action="store_false", dest="submit_review", help="Skip formal PR review submission and delegate gate to workflow")
     return parser.parse_args()
@@ -85,11 +86,20 @@ def main() -> int:
 
     # 2. Diff Extraction & Safety Guard
     diff_guard = DiffGuard(workspace=args.workspace, base_sha=args.base, head_sha=args.head)
-    try:
-        diff_content = diff_guard._git("diff", "--no-ext-diff", "--no-textconv", f"{args.base}...{args.head}")
-    except Exception as exc:
-        print(f"Failed to generate diff: {exc}", file=sys.stderr)
-        return 1
+    if args.diff_file and os.path.isfile(args.diff_file):
+        try:
+            with open(args.diff_file, "r", encoding="utf-8", errors="replace") as f:
+                diff_content = f.read()
+            print(f"Loaded pre-verified diff from {args.diff_file} ({len(diff_content.encode('utf-8'))} bytes)")
+        except Exception as exc:
+            print(f"Failed to read diff-file: {exc}", file=sys.stderr)
+            return 1
+    else:
+        try:
+            diff_content = diff_guard._git("diff", "--no-ext-diff", "--no-textconv", f"{args.base}...{args.head}")
+        except Exception as exc:
+            print(f"Failed to generate diff: {exc}", file=sys.stderr)
+            return 1
 
     safe, message = diff_guard.verify_safety(diff_content)
     if not safe:
