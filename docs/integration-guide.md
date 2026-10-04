@@ -53,7 +53,7 @@
     ACTION_DECISION: ${{ steps.reviewer.outputs.decision }}
     ACTION_BLOCKING: ${{ steps.reviewer.outputs.blocking }}
   run: |
-    python3 << 'PY'
+    python3 - <<'PY'
     import json, os, re
     from pathlib import Path
     
@@ -130,6 +130,9 @@
 
 #### 3. 프롬프트 구성 (Python 인라인)
 
+> **팁**: 복잡한 프롬프트나 YAML 파싱 문제가 있는 경우, 프롬프트 빌드 로직을 별도 스크립트 파일(`.github/scripts/build-review-prompt.py`)로 분리할 수 있습니다.
+> 이 방식은 YAML 내 특수문자(`'`, `<<` 등) 충돌을 완전히 방지합니다.
+
 ```yaml
 - name: Build review prompt
   env:
@@ -138,7 +141,7 @@
     REVIEW_DELIMITER: ${{ env.REVIEW_DELIMITER }}
     TRIGGER_MODE: ${{ env.TRIGGER_MODE }}
   run: |
-    python3 << 'PROMPT_PY'
+    python3 - <<'PROMPT_PY'
     import os
     from pathlib import Path
     
@@ -186,7 +189,7 @@ End with exactly: {summary_key}={{"critical":0,"major":0,"minor":0,"nit":0}}
 --- END UNTRUSTED PULL REQUEST DIFF {delimiter} ---
 """
     
-    (review_dir / "review-prompt.txt").write_text(prompt, encoding="utf-8")
+    (review_dir / "kiro-prompt.txt").write_text(prompt, encoding="utf-8")
     print(f"Prompt built: {len(prompt)} chars, mode={trigger_mode}")
     PROMPT_PY
 ```
@@ -200,7 +203,7 @@ End with exactly: {summary_key}={{"critical":0,"major":0,"minor":0,"nit":0}}
     KIRO_LOG_NO_COLOR=1 kiro-cli chat --no-interactive \
       --agent-engine v1 \
       --trust-tools= \
-      "$(cat review-prompt.txt)" \
+      "$(cat kiro-prompt.txt)" \
       > kiro-raw-output.txt 2>&1 || true
 ```
 
@@ -213,7 +216,7 @@ End with exactly: {summary_key}={{"critical":0,"major":0,"minor":0,"nit":0}}
     REVIEW_DIR: ${{ env.REVIEW_DIR }}
     REVIEW_SUMMARY_KEY: ${{ env.REVIEW_SUMMARY_KEY }}
   run: |
-    python3 << 'PARSE_PY'
+    python3 - <<'PARSE_PY'
     import json, os, re
     from pathlib import Path
     

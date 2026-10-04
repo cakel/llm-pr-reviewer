@@ -1,6 +1,6 @@
 # Multi-CLI LLM PR Reviewer (`llm-pr-reviewer`)
 
-> **Self-hosted 러너에 인증된 CLI(`kiro`, `codex`, `agy`) 세션을 활용한 무비용 AI 코드리뷰 및 자동 Quota 폴백 하네스**
+> **Self-hosted 러너에 인증된 CLI(`kiro`, `codex`, `agy`, `claude`) 세션을 활용한 무비용 AI 코드리뷰 및 자동 Quota 폴백 하네스**
 
 `llm-pr-reviewer`는 별도의 유료 API Key 발급 없이, 러너 머신에 이미 로그인되어 있는 터미널 AI CLI(`kiro-cli`, `codex`, `agy`) 세션을 활용하여 GitHub PR을 자동 리뷰하는 GitHub Action / Reusable Workflow입니다.
 
@@ -8,7 +8,7 @@
 
 ## ⚡ 주요 특징
 
-* **멀티 CLI 엔진 & Quota Fallback**: `kiro-cli` $\to$ `codex` $\to$ `agy` 순으로 시도하며, 한 도구의 할당량(Quota) 소진 시 무중단으로 다음 도구로 자동 전환됩니다.
+* **멀티 CLI 엔진 & Quota Fallback**: `kiro-cli` $\to$ `codex` $\to$ `agy` $\to$ `claude` 순으로 시도하며, 한 도구의 할당량(Quota) 소진 시 무중단으로 다음 도구로 자동 전환됩니다.
 * **Last Success 캐시**: 직전에 성공한 엔진을 기억(TTL 1시간)하여, 다음 PR 리뷰 시 해당 도구를 1순위로 즉시 호출합니다.
 * **유지보수자 권한 게이팅**: 저장소 Collaborator(`write`, `maintain`, `admin`)의 PR만 자동 실행하며, 외부 기여자 PR은 `/review` 코멘트 승인 시에만 동작하여 러너 자원을 보호합니다.
 * **Jules 스타일 가독성 & 이력 추적**:
@@ -54,7 +54,7 @@ jobs:
         uses: cakel/llm-pr-reviewer@main
         with:
           github-token: ${{ github.token }}
-          engines: "kiro,codex,agy"
+          engines: "kiro,codex,agy,claude"
 ```
 
 ---
