@@ -23,11 +23,24 @@ inputs:
     description: "Custom path to persist last successful engine"
     required: false
     default: ""
+  submit-review:
+    description: "Whether to submit a formal request-changes review (default true; set false to delegate decision to workflow gate)"
+    required: false
+    default: "true"
+
+outputs:
+  decision:
+    description: "Review decision (approve, request_changes, or fix_suggested)"
+    value: "${{ steps.reviewer.outputs.decision }}"
+  blocking:
+    description: "Number of blocking findings (critical + major)"
+    value: "${{ steps.reviewer.outputs.blocking }}"
 
 runs:
   using: "composite"
   steps:
     - name: Run LLM Review Harness
+      id: reviewer
       shell: bash
       env:
         PYTHONPATH: "${{ github.action_path }}:${{ env.PYTHONPATH }}"
@@ -52,4 +65,5 @@ runs:
           --engines "${{ inputs.engines }}" \
           --model "${{ inputs.model }}" \
           --effort "${{ inputs.effort }}" \
+          ${{ inputs.submit-review == 'false' && '--no-submit-review' || '--submit-review' }} \
           ${{ inputs.state-file != '' && format('--state-file {0}', inputs.state-file) || '' }}

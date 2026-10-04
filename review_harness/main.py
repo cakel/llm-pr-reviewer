@@ -41,6 +41,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default=None)
     parser.add_argument("--effort", default="medium")
     parser.add_argument("--state-file", default=None)
+    parser.add_argument("--submit-review", action="store_true", default=True, help="Submit formal PR request-changes review on blocking issues")
+    parser.add_argument("--no-submit-review", action="store_false", dest="submit_review", help="Skip formal PR review submission and delegate gate to workflow")
     return parser.parse_args()
 
 
@@ -185,6 +187,14 @@ def main() -> int:
                 effort=effort_tag,
             )
             print(f"AI fix suggestions posted for commit {args.head[:7]}.")
+            gh_output = os.environ.get("GITHUB_OUTPUT")
+            if gh_output:
+                try:
+                    with open(gh_output, "a", encoding="utf-8") as f:
+                        f.write("decision=fix_suggested\n")
+                        f.write("blocking=0\n")
+                except Exception:
+                    pass
         except Exception as exc:
             print(f"Failed to post fix comment: {exc}", file=sys.stderr)
             return 1
@@ -197,6 +207,17 @@ def main() -> int:
     icon = "🛑" if decision == "request_changes" else "✅"
     verdict = "request_changes" if decision == "request_changes" else "approve"
     counts_line = " · ".join(f"{k} {counts[k]}" for k in ["critical", "major", "minor", "nit"])
+
+    gh_output = os.environ.get("GITHUB_OUTPUT")
+    if gh_output:
+        try:
+            with open(gh_output, "a", encoding="utf-8") as f:
+                f.write(f"decision={decision}\n")
+                f.write(f"blocking={blocking}\n")
+                f.write(f"critical_count={counts.get('critical', 0)}\n")
+                f.write(f"major_count={counts.get('major', 0)}\n")
+        except Exception as exc:
+            print(f"::warning::Failed to write GITHUB_OUTPUT: {exc}")
 
     run_id = os.environ.get("GITHUB_RUN_ID", "0")
     server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
@@ -224,16 +245,20 @@ def main() -> int:
 
     # 9. Gate Block if Changes Requested
     if decision == "request_changes":
-        print(f"Review blocked PR with {blocking} critical/major findings.")
-        try:
-            comment_mgr._gh(
-                "pr", "review", str(args.pr), "--repo", args.repo,
-                "--request-changes",
-                "--body", f"AI review ({chosen_engine.upper()}) detected {blocking} critical/major issues. Please address findings."
-            )
-        except Exception as exc:
-            print(f"::warning::Could not submit request-changes review: {exc}")
-        return 1
+        print(f"Review identified {blocking} critical/major findings (decision: request_changes).")
+        if args.submit_review:
+            try:
+                comment_mgr._gh(
+                    "pr", "review", str(args.pr), "--repo", args.repo,
+                    "--request-changes",
+                    "--body", f"AI review ({chosen_engine.upper()}) detected {blocking} critical/major issues. Please address findings."
+                )
+            except Exception as exc:
+                print(f"::warning::Could not submit request-changes review: {exc}")
+            return 1
+        else:
+            print("Formal PR review submission skipped (--no-submit-review); gate decision delegated to workflow.")
+            return 0
 
     return 0
 
