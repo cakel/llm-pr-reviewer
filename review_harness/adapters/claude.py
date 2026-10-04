@@ -1,4 +1,4 @@
-"""Claude Code CLI adapter with standard Anthropic auth and custom endpoint support."""
+"""Claude Code CLI adapter with default configuration respect and custom endpoint support."""
 
 import os
 import shutil
@@ -8,9 +8,6 @@ from .base import EngineAdapter
 
 class ClaudeAdapter(EngineAdapter):
     name = "claude"
-
-    def __init__(self, default_ollama_model: str = "gemma4:31b-cloud"):
-        self.default_ollama_model = default_ollama_model
 
     def detect(self) -> bool:
         """Check if claude CLI binary is installed and executable."""
@@ -37,24 +34,21 @@ class ClaudeAdapter(EngineAdapter):
     ) -> tuple[str, int]:
         env = os.environ.copy()
 
-        # If user explicitly configured ANTHROPIC_BASE_URL (e.g. Ollama or custom proxy)
+        # If user explicitly configured custom ANTHROPIC_BASE_URL (e.g. Ollama or proxy)
         base_url = env.get("ANTHROPIC_BASE_URL", "")
-        chosen_model = model
-
         if base_url and ("11434" in base_url or "localhost" in base_url):
             if "ANTHROPIC_API_KEY" not in env:
                 env["ANTHROPIC_API_KEY"] = "ollama"
             env["CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT"] = "1"
-            if not chosen_model:
-                chosen_model = self.default_ollama_model
 
         cmd = [
             "claude", "-p", prompt,
             "--tools", "",
             "--no-session-persistence",
         ]
-        if chosen_model:
-            cmd.extend(["--model", chosen_model])
+        # Only pass --model if explicitly requested; otherwise respect Claude Code's configured default
+        if model:
+            cmd.extend(["--model", model])
         if effort:
             cmd.extend(["--effort", effort])
 
