@@ -136,13 +136,21 @@ class CommentManager:
 
         return str(target_id)
 
-    def post_fix_comment(self, body: str, engine_name: str, head_sha: str) -> str:
+    def post_fix_comment(
+        self,
+        body: str,
+        engine_name: str,
+        head_sha: str,
+        model: str = "auto",
+        effort: str = "medium",
+    ) -> str:
         """Post AI fix suggestions as a dedicated comment on the PR."""
         marker = f"<!-- kiro-fix-comment -->\n<!-- kiro-fix-sha:{head_sha} -->\n"
-        header = f"## 🛠️ AI Fix Suggestions ({engine_name.upper()})\n\n"
+        header = f"## 🛠️ AI Fix Suggestions ({engine_name.upper()} / {model}, {effort})\n\n"
         full_comment = marker + header + body
         temp_file = Path("/tmp") / f"fix_comment_{self.pr_number}.md"
         temp_file.write_text(full_comment, encoding="utf-8")
         out = self._gh("pr", "comment", str(self.pr_number), "--repo", self.repo, "--body-file", str(temp_file))
         return out
+
 

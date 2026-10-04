@@ -172,9 +172,18 @@ def main() -> int:
         print("All candidate LLM review engines failed or produced invalid summaries.", file=sys.stderr)
         return 1
 
+    model_tag = args.model if args.model else "auto"
+    effort_tag = args.effort if args.effort else "medium"
+
     if is_fix_mode:
         try:
-            comment_mgr.post_fix_comment(body=cleaned_review, engine_name=chosen_engine, head_sha=args.head)
+            comment_mgr.post_fix_comment(
+                body=cleaned_review,
+                engine_name=chosen_engine,
+                head_sha=args.head,
+                model=model_tag,
+                effort=effort_tag,
+            )
             print(f"AI fix suggestions posted for commit {args.head[:7]}.")
         except Exception as exc:
             print(f"Failed to post fix comment: {exc}", file=sys.stderr)
@@ -196,13 +205,13 @@ def main() -> int:
     comment_body = (
         "<!-- kiro-review-comment -->\n"
         f"<!-- kiro-review-sha:{args.head} -->\n"
-        f"## 🤖 AI Review ({chosen_engine.upper()})\n\n"
+        f"## 🤖 AI Review ({chosen_engine.upper()} / {model_tag}, {effort_tag})\n\n"
         f"{cleaned_review}\n\n"
         "### Verdict\n"
         f"{icon} **{heading}** (`VERDICT: {verdict}`)  \n"
         f"{counts_line}\n\n"
         "---\n"
-        f"<sub>Commit `{args.head[:7]}` · engine `{chosen_engine}` · [workflow run]({run_url}) · 새 커밋이 push되면 이 코멘트가 갱신됩니다.</sub>\n"
+        f"<sub>Commit `{args.head[:7]}` · engine `{chosen_engine}` ({model_tag}, {effort_tag}) · [workflow run]({run_url}) · 새 커밋이 push되면 이 코멘트가 갱신됩니다.</sub>\n"
     )
 
     # 8. Post Comment and Collapse Older Ones
