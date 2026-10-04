@@ -21,12 +21,37 @@ class DiffGuard:
         "1wdA=="
     )
 
+    SENSITIVE_PATTERNS = [
+        r"^\.github/workflows/",
+        r"^/etc/",
+        r"\.service$",
+        r"^\.env",
+        r"\.env\.",
+        r"(secret|credential|token|id_rsa|id_ed25519)",
+    ]
+
     def __init__(self, workspace: str, base_sha: str, head_sha: str):
         self.workspace = workspace
         self.base_sha = base_sha
         self.head_sha = head_sha
         raw_pattern = base64.b64decode(self.CONTROL_PATTERN_B64).decode("utf-8")
         self.control_pattern = re.compile(raw_pattern, re.IGNORECASE)
+
+    def get_sensitive_paths(self) -> list[str]:
+        """Detect any modified files matching security-sensitive paths."""
+        try:
+            raw_names = self._git("diff", "--name-only", f"{self.base_sha}...{self.head_sha}")
+            files = [f.strip() for f in raw_names.splitlines() if f.strip()]
+            sensitive = []
+            for f in files:
+                for pattern in self.SENSITIVE_PATTERNS:
+                    if re.search(pattern, f, re.IGNORECASE):
+                        sensitive.append(f)
+                        break
+            return sensitive
+        except Exception:
+            return []
+
 
     def _git(self, *args: str) -> str:
         env = {
@@ -122,13 +147,25 @@ class DiffGuard:
             "",
             f"**{len(rows)}개 파일** 변경 · `+{total_add}` / `-{total_del}`  ",
             f"**Head:** `{short_head}`",
+        ]
+
+        sensitive_files = self.get_sensitive_paths()
+        if sensitive_files:
+            lines.append("")
+            lines.append("> ⚠️ **보안 주의 경로 감지**: CI/인프라/인증 핵심 파일이 변경되었습니다. 인간 메인테이너의 직접 확인이 필요합니다.")
+            for sf in sensitive_files[:5]:
+                lines.append(f"> - `{esc(sf)}`")
+            if len(sensitive_files) > 5:
+                lines.append(f"> - … 외 {len(sensitive_files) - 5}개 파일")
+
+        lines.extend([
             "",
             "<details open>",
             "<summary>변경된 파일</summary>",
             "",
             "| 파일 | 추가 | 삭제 |",
             "| --- | ---: | ---: |",
-        ]
+        ])
         for path, a, d, is_binary in rows[:limit]:
             lines.append(f"| `{esc(path)}` | {'binary' if is_binary else a} | {'' if is_binary else d} |")
         if len(rows) > limit:

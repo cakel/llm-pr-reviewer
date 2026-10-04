@@ -1,7 +1,9 @@
 """Main orchestrator for LLM PR Reviewer."""
 
 import argparse
+import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -12,7 +14,7 @@ from .adapters.kiro import KiroAdapter
 from .comment_manager import CommentManager
 from .diff_guard import DiffGuard
 from .gate import GateKeeper
-from .prompt import build_review_prompt, generate_tokens, sanitize_and_parse_review
+from .prompt import build_fix_prompt, build_review_prompt, generate_tokens, sanitize_and_parse_review
 from .state import StateManager
 
 
@@ -44,6 +46,20 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+
+    # Auto-resolve missing SHAs or PR author (useful for issue_comment triggers)
+    if (not args.base or not args.head or not args.pr_author) and args.repo and args.pr:
+        try:
+            cmd = ["gh", "pr", "view", str(args.pr), "--repo", args.repo, "--json", "baseRefOid,headRefOid,author"]
+            res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            info = json.loads(res.stdout)
+            args.base = args.base or info.get("baseRefOid", "")
+            args.head = args.head or info.get("headRefOid", "")
+            if not args.pr_author and "author" in info:
+                args.pr_author = info["author"].get("login", "")
+        except Exception as exc:
+            print(f"::warning::Failed to auto-resolve PR SHAs: {exc}")
+
     if not args.repo or not args.pr or not args.base or not args.head:
         print("Error: Missing required PR arguments (--repo, --pr, --base, --head)", file=sys.stderr)
         return 1
@@ -61,6 +77,9 @@ def main() -> int:
         print(f"Skipping LLM review: {reason}")
         return 0
     print(f"Authorization confirmed: {reason}")
+
+    cmd, guidance = GateKeeper.parse_comment_command(args.comment_body)
+    is_fix_mode = (cmd == "/fix")
 
     # 2. Diff Extraction & Safety Guard
     diff_guard = DiffGuard(workspace=args.workspace, base_sha=args.base, head_sha=args.head)
@@ -90,12 +109,26 @@ def main() -> int:
 
     # 5. Build Delimited Prompt
     delimiter, summary_key = generate_tokens()
-    prompt = build_review_prompt(
-        diff=diff_content,
-        delimiter=delimiter,
-        summary_key=summary_key,
-        previous_findings=previous_findings,
-    )
+    sensitive_paths = diff_guard.get_sensitive_paths()
+    if is_fix_mode:
+        prompt = build_fix_prompt(
+            diff=diff_content,
+            delimiter=delimiter,
+            summary_key=summary_key,
+            previous_findings=previous_findings,
+            user_guidance=guidance,
+            sensitive_paths=sensitive_paths,
+        )
+    else:
+        prompt = build_review_prompt(
+            diff=diff_content,
+            delimiter=delimiter,
+            summary_key=summary_key,
+            previous_findings=previous_findings,
+            user_guidance=guidance,
+            sensitive_paths=sensitive_paths,
+        )
+
 
     # 6. Engine Selection & Fallback Loop
     requested_engines = [e.strip() for e in args.engines.split(",") if e.strip() in AVAILABLE_ADAPTERS]
@@ -138,6 +171,15 @@ def main() -> int:
     if not chosen_engine or not cleaned_review or not counts:
         print("All candidate LLM review engines failed or produced invalid summaries.", file=sys.stderr)
         return 1
+
+    if is_fix_mode:
+        try:
+            comment_mgr.post_fix_comment(body=cleaned_review, engine_name=chosen_engine, head_sha=args.head)
+            print(f"AI fix suggestions posted for commit {args.head[:7]}.")
+        except Exception as exc:
+            print(f"Failed to post fix comment: {exc}", file=sys.stderr)
+            return 1
+        return 0
 
     # 7. Classify Decision
     blocking = counts.get("critical", 0) + counts.get("major", 0)

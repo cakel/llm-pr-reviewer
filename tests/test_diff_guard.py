@@ -37,6 +37,17 @@ class TestDiffGuard(unittest.TestCase):
                     matched = True
         self.assertFalse(matched)
 
+    def test_sensitive_path_detection(self):
+        guard = DiffGuard(workspace=".", base_sha="HEAD~1", head_sha="HEAD")
+        with unittest.mock.patch.object(
+            guard, "_git", return_value=".github/workflows/deploy.yml\nsrc/index.js\n.env.production\n"
+        ):
+            sensitive = guard.get_sensitive_paths()
+            self.assertIn(".github/workflows/deploy.yml", sensitive)
+            self.assertIn(".env.production", sensitive)
+            self.assertNotIn("src/index.js", sensitive)
+
+
 
 if __name__ == "__main__":
     unittest.main()
