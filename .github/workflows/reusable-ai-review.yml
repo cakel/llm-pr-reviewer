@@ -1,0 +1,141 @@
+name: AI Code Review (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Runner for precheck job (ubuntu-latest for public repos, self-hosted for private repos)'
+        type: string
+        default: '["ubuntu-latest"]'
+      review-runner:
+        description: 'Runner for ai-review job (must have CLI auth)'
+        type: string
+        default: '["self-hosted", "llm-reviewer"]'
+      engines:
+        description: 'Comma-separated list of CLI engines to attempt'
+        type: string
+        default: 'kiro,codex,agy,claude'
+      effort:
+        description: 'Reasoning effort level'
+        type: string
+        default: 'medium'
+    secrets:
+      token:
+        description: 'GitHub token for PR comments and reviews'
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  # Precheck: Validate permissions and PR metadata before running on self-hosted
+  precheck:
+    if: |
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+       (github.event.comment.body == '/review' || startsWith(github.event.comment.body, '/review ')))
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 3
+    outputs:
+      pr_num: ${{ steps.validate.outputs.pr_num }}
+      head_sha: ${{ steps.validate.outputs.head_sha }}
+      base_sha: ${{ steps.validate.outputs.base_sha }}
+      should_review: ${{ steps.validate.outputs.should_review }}
+    steps:
+      - name: Validate trigger and permissions
+        id: validate
+        env:
+          GH_TOKEN: ${{ secrets.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO_NAME: ${{ github.repository }}
+          PR_NUM_EVENT: ${{ github.event.pull_request.number }}
+          ISSUE_NUM_EVENT: ${{ github.event.issue.number }}
+          ACTOR_PR: ${{ github.event.pull_request.user.login }}
+          ACTOR_COMMENT: ${{ github.event.comment.user.login }}
+        run: |
+          set -euo pipefail
+
+          # Determine PR number
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            PR_NUM="$PR_NUM_EVENT"
+            ACTOR="$ACTOR_PR"
+          else
+            PR_NUM="$ISSUE_NUM_EVENT"
+            ACTOR="$ACTOR_COMMENT"
+          fi
+
+          [ -n "$PR_NUM" ] || { echo "::error::PR number missing"; exit 1; }
+
+          # Validate actor permission via API
+          ACTOR_PERM=$(gh api "repos/$REPO_NAME/collaborators/$ACTOR/permission" --jq .permission 2>/dev/null || echo "none")
+          if [ "$ACTOR_PERM" != "admin" ] && [ "$ACTOR_PERM" != "maintain" ] && [ "$ACTOR_PERM" != "write" ]; then
+            echo "::error::Actor '$ACTOR' lacks required permission ($ACTOR_PERM)"
+            exit 1
+          fi
+          echo "Actor permission verified: $ACTOR ($ACTOR_PERM)"
+
+          # Get PR metadata
+          PR_INFO=$(gh pr view "$PR_NUM" --repo "$REPO_NAME" --json state,baseRefOid,headRefOid,headRepositoryOwner)
+          PR_STATE=$(echo "$PR_INFO" | jq -r .state)
+          
+          if [ "$PR_STATE" != "OPEN" ]; then
+            echo "::error::PR #$PR_NUM is not open ($PR_STATE)"
+            exit 1
+          fi
+
+          # Block fork PRs on self-hosted runners (full repo name comparison)
+          HEAD_REPO=$(gh pr view "$PR_NUM" --repo "$REPO_NAME" --json headRepository --jq .headRepository.nameWithOwner)
+          if [ "$HEAD_REPO" != "$REPO_NAME" ]; then
+            echo "::error::Fork PRs are not allowed for security reasons (head: $HEAD_REPO, expected: $REPO_NAME)"
+            exit 1
+          fi
+
+          HEAD_SHA=$(echo "$PR_INFO" | jq -r .headRefOid)
+          BASE_SHA=$(echo "$PR_INFO" | jq -r .baseRefOid)
+
+          echo "pr_num=$PR_NUM" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "should_review=true" >> "$GITHUB_OUTPUT"
+          echo "Precheck passed: PR #$PR_NUM, HEAD=$HEAD_SHA"
+
+  # AI Review: Run on self-hosted runner with CLI authentication
+  ai-review:
+    needs: precheck
+    if: needs.precheck.outputs.should_review == 'true'
+    runs-on: ${{ fromJSON(inputs.review-runner) }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          ref: ${{ needs.precheck.outputs.head_sha }}
+          fetch-depth: 0
+
+      - name: Verify checkout SHA
+        run: |
+          CHECKOUT_SHA=$(git rev-parse HEAD)
+          EXPECTED_SHA="${{ needs.precheck.outputs.head_sha }}"
+          if [ "$CHECKOUT_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Checkout SHA mismatch: $CHECKOUT_SHA != $EXPECTED_SHA"
+            exit 1
+          fi
+          echo "Checkout verified: $CHECKOUT_SHA"
+
+      - name: Run LLM PR Reviewer
+        uses: cakel/llm-pr-reviewer@main  # TODO: pin to SHA after release
+        # Security note: This action runs in the same runner context.
+        # For maximum isolation, use a dedicated runner with minimal permissions.
+        with:
+          github-token: ${{ secrets.token }}
+          engines: ${{ inputs.engines }}
+          effort: ${{ inputs.effort }}
