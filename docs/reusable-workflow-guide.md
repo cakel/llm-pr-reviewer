@@ -36,7 +36,7 @@ permissions:
 
 jobs:
   ai-review:
-    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@v1.0.0
+    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
     # runner 기본값: ubuntu-latest (precheck), self-hosted (ai-review)
@@ -60,7 +60,7 @@ permissions:
 
 jobs:
   ai-review:
-    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@v1.0.0
+    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
     with:
       runner: '["self-hosted", "llm-reviewer"]'  # precheck도 self-hosted 사용
     secrets:
@@ -88,7 +88,7 @@ jobs:
 
 ```yaml
 # 태그 사용 (권장)
-uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@v1.0.0
+uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
 
 # SHA 사용 (가장 안전)
 uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845...

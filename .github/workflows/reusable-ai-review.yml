@@ -132,7 +132,7 @@ jobs:
           echo "Checkout verified: $CHECKOUT_SHA"
 
       - name: Run LLM PR Reviewer
-        uses: cakel/llm-pr-reviewer@v1.0.0  # TODO: pin to SHA after release
+        uses: cakel/llm-pr-reviewer@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0  # TODO: pin to SHA after release
         # Security note: This action runs in the same runner context.
         # For maximum isolation, use a dedicated runner with minimal permissions.
         with:
