@@ -46,6 +46,10 @@ inputs:
     description: "Path to pre-verified diff file (overrides live git diff if provided)"
     required: false
     default: ""
+  max-diff-bytes:
+    description: "Diff size limit in UTF-8 bytes. Above it the review is refused (check fails) and a PR comment asks for a local review"
+    required: false
+    default: "200000"
 
 outputs:
   decision:
@@ -84,6 +88,7 @@ runs:
           --engines "${{ inputs.engines }}" \
           --model "${{ inputs.model }}" \
           --effort "${{ inputs.effort }}" \
+          --max-diff-bytes "${{ inputs.max-diff-bytes }}" \
           ${{ inputs.diff-file != '' && format('--diff-file {0}', inputs.diff-file) || '' }} \
           ${{ inputs.output-file != '' && format('--output-file {0}', inputs.output-file) || '' }} \
           ${{ inputs.summary-file != '' && format('--summary-file {0}', inputs.summary-file) || '' }} \

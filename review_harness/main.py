@@ -42,6 +42,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--effort", default="medium")
     parser.add_argument("--state-file", default=None)
     parser.add_argument("--diff-file", default=None, help="Path to pre-verified diff file")
+    parser.add_argument("--max-diff-bytes", type=int, default=DiffGuard.DEFAULT_MAX_DIFF_BYTES,
+                        help="Refuse automated review above this UTF-8 diff size and ask for a local review instead")
     parser.add_argument("--output-file", default=None, help="Save review comment markdown to specified file path")
     parser.add_argument("--summary-file", default=None, help="Save signed machine summary JSON to specified file path")
     parser.add_argument("--summary-key", default=os.environ.get("REVIEW_SUMMARY_KEY", None), help="Pre-shared secret key for machine summary signing and verification")
@@ -50,6 +52,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--submit-review", action="store_true", default=True, help="Submit formal PR request-changes review on blocking issues")
     parser.add_argument("--no-submit-review", action="store_false", dest="submit_review", help="Skip formal PR review submission and delegate gate to workflow")
     return parser.parse_args()
+
+
+def build_oversize_comment(base: str, head: str, size: int, limit: int) -> str:
+    """PR notice when the diff is too large for automated review."""
+    return (
+        "<!-- kiro-review-comment -->\n"
+        f"<!-- kiro-review-sha:{head} -->\n"
+        "## ⚠️ AI 리뷰 생략 — 변경점이 큽니다\n\n"
+        f"Commit `{head[:7]}` · diff **{size:,} bytes** > 한도 {limit:,} bytes\n\n"
+        "변경이 커서 자동 리뷰를 하지 않았습니다. 로컬에서 리뷰한 뒤 결과를 이 PR에 올려 주세요"
+        " (또는 PR을 나눠 주세요):\n\n"
+        "```bash\n"
+        f"python3 scripts/local_review.py --workspace <repo> --base {base[:7]} --head {head[:7]} --max-diff-bytes {size}\n"
+        "```\n\n"
+        "`scripts/local_review.py`는 llm-pr-reviewer 저장소에 있습니다. 이전 AI 리뷰는 이 커밋을 보지 않았으므로 접어 두었습니다.\n"
+    )
 
 
 def main() -> int:
@@ -106,7 +124,22 @@ def main() -> int:
             print(f"Failed to generate diff: {exc}", file=sys.stderr)
             return 1
 
-    safe, message = diff_guard.verify_safety(diff_content)
+    size = len(diff_content.encode("utf-8"))
+    if size > args.max_diff_bytes:
+        # Still fail closed (a large diff must not bypass review), but say why on the PR and fold
+        # older reviews: otherwise the last review of an earlier commit reads as current.
+        print(f"Diff size exceeds limit ({size} > {args.max_diff_bytes} bytes); asking for a local review.", file=sys.stderr)
+        if args.post_comment:
+            try:
+                CommentManager(repo=args.repo, pr_number=args.pr).post_and_collapse_reviews(
+                    head_sha=args.head,
+                    review_comment_markdown=build_oversize_comment(args.base, args.head, size, args.max_diff_bytes),
+                )
+            except Exception as exc:
+                print(f"::warning::Could not post oversize notice: {exc}")
+        return 1
+
+    safe, message = diff_guard.verify_safety(diff_content, max_bytes=args.max_diff_bytes)
     if not safe:
         print(f"Diff security check failed: {message}", file=sys.stderr)
         return 1

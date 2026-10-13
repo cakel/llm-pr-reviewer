@@ -80,6 +80,13 @@ class TestDiffGuard(unittest.TestCase):
             self.assertTrue(safe)
             self.assertIn("Diff passed safety verification", msg)
 
+    def test_size_limit_counts_and_reports_utf8_bytes(self):
+        guard = DiffGuard(workspace=".", base_sha="HEAD~1", head_sha="HEAD")
+        diff = "+" + "가" * 10  # 11 chars, 31 bytes
+        safe, msg = guard.verify_safety(diff, max_bytes=30)
+        self.assertFalse(safe)
+        self.assertIn("(31 > 30 bytes)", msg)
+
 
 if __name__ == "__main__":
     unittest.main()

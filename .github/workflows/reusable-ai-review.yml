@@ -19,6 +19,10 @@ on:
         description: 'Reasoning effort level'
         type: string
         default: 'medium'
+      max-diff-bytes:
+        description: 'Diff size limit in UTF-8 bytes; above it the review is refused and a PR comment asks for a local review'
+        type: string
+        default: '200000'
     secrets:
       token:
         description: 'GitHub token for PR comments and reviews'
@@ -132,10 +136,11 @@ jobs:
           echo "Checkout verified: $CHECKOUT_SHA"
 
       - name: Run LLM PR Reviewer
-        uses: cakel/llm-pr-reviewer@v1.1.0
+        uses: cakel/llm-pr-reviewer@v1.2.0
         # Security note: This action runs in the same runner context.
         # For maximum isolation, use a dedicated runner with minimal permissions.
         with:
           github-token: ${{ secrets.token }}
           engines: ${{ inputs.engines }}
           effort: ${{ inputs.effort }}
+          max-diff-bytes: ${{ inputs.max-diff-bytes }}
