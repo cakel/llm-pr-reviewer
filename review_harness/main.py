@@ -131,6 +131,18 @@ def main() -> int:
         # `decision` still blocks it. The PR comment says to stop, and folds older reviews so a stale
         # verdict of an earlier commit no longer reads as current.
         print(f"Diff size exceeds limit ({size} > {args.max_diff_bytes} bytes); review skipped (neutral).")
+        notice = build_oversize_comment(args.base, args.head, size, args.max_diff_bytes)
+        # The job still ends green, so put "not an approval" on the check itself: a warning annotation
+        # next to the ✓ and the notice at the top of the job summary.
+        print(f"::warning title=AI 리뷰 중지 (승인 아님)::diff {size:,} bytes > 한도 {args.max_diff_bytes:,} bytes"
+              " — 리뷰를 실시하지 않았습니다. 추가 리뷰를 요청하지 마세요.")
+        step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if step_summary:
+            try:
+                with open(step_summary, "a", encoding="utf-8") as f:
+                    f.write(notice)
+            except Exception as exc:
+                print(f"::warning::Failed to write GITHUB_STEP_SUMMARY: {exc}")
         gh_output = os.environ.get("GITHUB_OUTPUT")
         if gh_output:
             try:
@@ -143,7 +155,7 @@ def main() -> int:
             try:
                 CommentManager(repo=args.repo, pr_number=args.pr).post_and_collapse_reviews(
                     head_sha=args.head,
-                    review_comment_markdown=build_oversize_comment(args.base, args.head, size, args.max_diff_bytes),
+                    review_comment_markdown=notice,
                 )
             except Exception as exc:
                 print(f"::warning::Could not post oversize notice: {exc}")

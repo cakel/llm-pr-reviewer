@@ -1,5 +1,7 @@
 """Tests for CLI main argument parsing and output handling."""
 
+import contextlib
+import io
 import os
 import tempfile
 import unittest
@@ -44,14 +46,18 @@ class TestOversizeDiff(unittest.TestCase):
     def run_main(self, diff, argv=()):
         from review_harness import main as m
         with tempfile.TemporaryDirectory() as tmp:
-            out = os.path.join(tmp, "github_output")
-            with patch("sys.argv", self.ARGV + list(argv)), patch.dict(os.environ, {"GITHUB_OUTPUT": out}), \
+            out, summary = os.path.join(tmp, "github_output"), os.path.join(tmp, "step_summary")
+            stdout = io.StringIO()
+            with patch("sys.argv", self.ARGV + list(argv)), \
+                 patch.dict(os.environ, {"GITHUB_OUTPUT": out, "GITHUB_STEP_SUMMARY": summary}), \
                  patch.object(m.GateKeeper, "is_authorized", return_value=(True, "ok")), \
                  patch.object(m.DiffGuard, "_git", return_value=diff), \
                  patch.object(m.DiffGuard, "verify_safety", return_value=(False, "stop here")) as verify, \
-                 patch.object(m.CommentManager, "post_and_collapse_reviews") as post:
+                 patch.object(m.CommentManager, "post_and_collapse_reviews") as post, \
+                 contextlib.redirect_stdout(stdout):
                 code = m.main()
-            self.output = open(out, encoding="utf-8").read() if os.path.exists(out) else ""
+            read = lambda p: open(p, encoding="utf-8").read() if os.path.exists(p) else ""
+            self.output, self.summary, self.stdout = read(out), read(summary), stdout.getvalue()
         return code, post, verify
 
     def test_oversize_is_neutral_and_says_stop(self):
@@ -68,11 +74,15 @@ class TestOversizeDiff(unittest.TestCase):
         self.assertIn("추가 리뷰를 요청하지 마세요", body)
         self.assertIn("VERDICT: skipped_oversize", body)       # folded title shows it, not 'unknown'
         self.assertIn("--max-diff-bytes 31", body)
+        # The job ends green, so the check itself must say "not an approval"
+        self.assertIn("::warning title=AI 리뷰 중지 (승인 아님)::diff 31 bytes > 한도 30 bytes", self.stdout)
+        self.assertIn("추가 리뷰를 요청하지 마세요", self.summary)
 
     def test_oversize_without_comment_posting(self):
         code, post, _ = self.run_main("+" + "가" * 10, ["--no-post-comment"])
         self.assertEqual(code, 0)
         self.assertIn("decision=skipped_oversize\n", self.output)
+        self.assertIn("AI 리뷰 중지 (승인 아님)", self.stdout)   # annotation does not depend on comment posting
         post.assert_not_called()
 
     def test_within_limit_reaches_safety_check_with_same_limit(self):
