@@ -42,6 +42,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--effort", default="medium")
     parser.add_argument("--state-file", default=None)
     parser.add_argument("--diff-file", default=None, help="Path to pre-verified diff file")
+    parser.add_argument("--max-diff-bytes", type=int, default=DiffGuard.DEFAULT_MAX_DIFF_BYTES,
+                        help="Refuse automated review above this UTF-8 diff size and ask for a local review instead")
     parser.add_argument("--output-file", default=None, help="Save review comment markdown to specified file path")
     parser.add_argument("--summary-file", default=None, help="Save signed machine summary JSON to specified file path")
     parser.add_argument("--summary-key", default=os.environ.get("REVIEW_SUMMARY_KEY", None), help="Pre-shared secret key for machine summary signing and verification")
@@ -50,6 +52,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--submit-review", action="store_true", default=True, help="Submit formal PR request-changes review on blocking issues")
     parser.add_argument("--no-submit-review", action="store_false", dest="submit_review", help="Skip formal PR review submission and delegate gate to workflow")
     return parser.parse_args()
+
+
+def build_oversize_comment(base: str, head: str, size: int, limit: int) -> str:
+    """PR notice when the diff is too large for automated review."""
+    return (
+        "<!-- kiro-review-comment -->\n"
+        f"<!-- kiro-review-sha:{head} -->\n"
+        "## ⏸️ AI 리뷰 중지 — 변경점이 큽니다 (decision: skipped_oversize)\n\n"
+        f"Commit `{head[:7]}` · diff **{size:,} bytes** > 한도 {limit:,} bytes\n\n"
+        "**추가 리뷰를 요청하지 마세요.** 코드를 고쳐 push하거나 `/review`를 다시 요청해도 같은 oversize 결과가 나옵니다"
+        " (diff는 커밋이 쌓일수록 커집니다). 이것은 코드의 문제가 아니라 리뷰를 실시하지 않았다는 뜻이며, 승인도 아닙니다.\n\n"
+        "필요하면 사람이 결정합니다: PR 분할, 저장소의 `max-diff-bytes` 조정, 또는 로컬 리뷰"
+        f" (`scripts/local_review.py --base {base[:7]} --head {head[:7]} --max-diff-bytes {size}`, llm-pr-reviewer 저장소).\n\n"
+        "이전 AI 리뷰는 이 커밋을 보지 않았으므로 접어 두었습니다.\n"
+        "<!-- VERDICT: skipped_oversize -->\n"
+    )
 
 
 def main() -> int:
@@ -106,7 +124,44 @@ def main() -> int:
             print(f"Failed to generate diff: {exc}", file=sys.stderr)
             return 1
 
-    safe, message = diff_guard.verify_safety(diff_content)
+    size = len(diff_content.encode("utf-8"))
+    if size > args.max_diff_bytes:
+        # Neutral, not a failure: a red check reads as "fix the code and push again", and an agent would
+        # retry forever (the diff only grows). decision=skipped_oversize is never an approval, so a gate on
+        # `decision` still blocks it. The PR comment says to stop, and folds older reviews so a stale
+        # verdict of an earlier commit no longer reads as current.
+        print(f"Diff size exceeds limit ({size} > {args.max_diff_bytes} bytes); review skipped (neutral).")
+        notice = build_oversize_comment(args.base, args.head, size, args.max_diff_bytes)
+        # The job still ends green, so put "not an approval" on the check itself: a warning annotation
+        # next to the ✓ and the notice at the top of the job summary.
+        print(f"::warning title=AI 리뷰 중지 (승인 아님)::diff {size:,} bytes > 한도 {args.max_diff_bytes:,} bytes"
+              " — 리뷰를 실시하지 않았습니다. 추가 리뷰를 요청하지 마세요.")
+        step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if step_summary:
+            try:
+                with open(step_summary, "a", encoding="utf-8") as f:
+                    f.write(notice)
+            except Exception as exc:
+                print(f"::warning::Failed to write GITHUB_STEP_SUMMARY: {exc}")
+        gh_output = os.environ.get("GITHUB_OUTPUT")
+        if gh_output:
+            try:
+                with open(gh_output, "a", encoding="utf-8") as f:
+                    f.write("decision=skipped_oversize\n")
+                    f.write("blocking=0\n")
+            except Exception as exc:
+                print(f"::warning::Failed to write GITHUB_OUTPUT: {exc}")
+        if args.post_comment:
+            try:
+                CommentManager(repo=args.repo, pr_number=args.pr).post_and_collapse_reviews(
+                    head_sha=args.head,
+                    review_comment_markdown=notice,
+                )
+            except Exception as exc:
+                print(f"::warning::Could not post oversize notice: {exc}")
+        return 0
+
+    safe, message = diff_guard.verify_safety(diff_content, max_bytes=args.max_diff_bytes)
     if not safe:
         print(f"Diff security check failed: {message}", file=sys.stderr)
         return 1

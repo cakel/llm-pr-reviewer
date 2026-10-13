@@ -46,10 +46,14 @@ inputs:
     description: "Path to pre-verified diff file (overrides live git diff if provided)"
     required: false
     default: ""
+  max-diff-bytes:
+    description: "Diff size limit in UTF-8 bytes. Above it the review is skipped (decision=skipped_oversize, step succeeds) and a PR comment asks not to request more reviews"
+    required: false
+    default: "200000"
 
 outputs:
   decision:
-    description: "Review decision (approve, request_changes, or fix_suggested)"
+    description: "Review decision (approve, request_changes, fix_suggested, or skipped_oversize — not reviewed, never an approval)"
     value: "${{ steps.reviewer.outputs.decision }}"
   blocking:
     description: "Number of blocking findings (critical + major)"
@@ -84,6 +88,7 @@ runs:
           --engines "${{ inputs.engines }}" \
           --model "${{ inputs.model }}" \
           --effort "${{ inputs.effort }}" \
+          --max-diff-bytes "${{ inputs.max-diff-bytes }}" \
           ${{ inputs.diff-file != '' && format('--diff-file {0}', inputs.diff-file) || '' }} \
           ${{ inputs.output-file != '' && format('--output-file {0}', inputs.output-file) || '' }} \
           ${{ inputs.summary-file != '' && format('--summary-file {0}', inputs.summary-file) || '' }} \

@@ -74,8 +74,9 @@ class DiffGuard:
     def verify_safety(self, diff_content: str, max_bytes: int = DEFAULT_MAX_DIFF_BYTES) -> tuple[bool, str]:
         """Verify the diff against prompt injection and attribute hijacking."""
         # 1. Size check
-        if len(diff_content.encode("utf-8")) > max_bytes:
-            return False, f"Diff size exceeds maximum safety limit ({len(diff_content)} > {max_bytes} bytes)"
+        size = len(diff_content.encode("utf-8"))
+        if size > max_bytes:
+            return False, f"Diff size exceeds maximum safety limit ({size} > {max_bytes} bytes)"
         if not diff_content.strip():
             return False, "Diff is empty; refusing review."
 

@@ -29,6 +29,8 @@ def parse_args():
     parser.add_argument("--effort", default="medium", help="Reasoning effort")
     parser.add_argument("--previous-findings", default=None, help="Path to previous findings markdown or raw text")
     parser.add_argument("--user-guidance", default=None, help="Maintainer direction or specific instructions")
+    parser.add_argument("--max-diff-bytes", type=int, default=DiffGuard.DEFAULT_MAX_DIFF_BYTES,
+                        help="Diff size limit in UTF-8 bytes (raise it for a PR the CI reviewer refused as too large)")
     return parser.parse_args()
 
 
@@ -54,7 +56,7 @@ def main():
         return 0
 
     print(f"📦 Diff size: {len(diff_content.encode('utf-8'))} bytes")
-    safe, message = diff_guard.verify_safety(diff_content)
+    safe, message = diff_guard.verify_safety(diff_content, max_bytes=args.max_diff_bytes)
     if not safe:
         print(f"❌ Pre-review diff security guard rejected the diff: {message}", file=sys.stderr)
         return 2
