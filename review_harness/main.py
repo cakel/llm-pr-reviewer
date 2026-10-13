@@ -59,14 +59,14 @@ def build_oversize_comment(base: str, head: str, size: int, limit: int) -> str:
     return (
         "<!-- kiro-review-comment -->\n"
         f"<!-- kiro-review-sha:{head} -->\n"
-        "## ⚠️ AI 리뷰 생략 — 변경점이 큽니다\n\n"
+        "## ⏸️ AI 리뷰 중지 — 변경점이 큽니다 (decision: skipped_oversize)\n\n"
         f"Commit `{head[:7]}` · diff **{size:,} bytes** > 한도 {limit:,} bytes\n\n"
-        "변경이 커서 자동 리뷰를 하지 않았습니다. 로컬에서 리뷰한 뒤 결과를 이 PR에 올려 주세요"
-        " (또는 PR을 나눠 주세요):\n\n"
-        "```bash\n"
-        f"python3 scripts/local_review.py --workspace <repo> --base {base[:7]} --head {head[:7]} --max-diff-bytes {size}\n"
-        "```\n\n"
-        "`scripts/local_review.py`는 llm-pr-reviewer 저장소에 있습니다. 이전 AI 리뷰는 이 커밋을 보지 않았으므로 접어 두었습니다.\n"
+        "**추가 리뷰를 요청하지 마세요.** 코드를 고쳐 push하거나 `/review`를 다시 요청해도 같은 oversize 결과가 나옵니다"
+        " (diff는 커밋이 쌓일수록 커집니다). 이것은 코드의 문제가 아니라 리뷰를 실시하지 않았다는 뜻이며, 승인도 아닙니다.\n\n"
+        "필요하면 사람이 결정합니다: PR 분할, 저장소의 `max-diff-bytes` 조정, 또는 로컬 리뷰"
+        f" (`scripts/local_review.py --base {base[:7]} --head {head[:7]} --max-diff-bytes {size}`, llm-pr-reviewer 저장소).\n\n"
+        "이전 AI 리뷰는 이 커밋을 보지 않았으므로 접어 두었습니다.\n"
+        "<!-- VERDICT: skipped_oversize -->\n"
     )
 
 
@@ -126,9 +126,19 @@ def main() -> int:
 
     size = len(diff_content.encode("utf-8"))
     if size > args.max_diff_bytes:
-        # Still fail closed (a large diff must not bypass review), but say why on the PR and fold
-        # older reviews: otherwise the last review of an earlier commit reads as current.
-        print(f"Diff size exceeds limit ({size} > {args.max_diff_bytes} bytes); asking for a local review.", file=sys.stderr)
+        # Neutral, not a failure: a red check reads as "fix the code and push again", and an agent would
+        # retry forever (the diff only grows). decision=skipped_oversize is never an approval, so a gate on
+        # `decision` still blocks it. The PR comment says to stop, and folds older reviews so a stale
+        # verdict of an earlier commit no longer reads as current.
+        print(f"Diff size exceeds limit ({size} > {args.max_diff_bytes} bytes); review skipped (neutral).")
+        gh_output = os.environ.get("GITHUB_OUTPUT")
+        if gh_output:
+            try:
+                with open(gh_output, "a", encoding="utf-8") as f:
+                    f.write("decision=skipped_oversize\n")
+                    f.write("blocking=0\n")
+            except Exception as exc:
+                print(f"::warning::Failed to write GITHUB_OUTPUT: {exc}")
         if args.post_comment:
             try:
                 CommentManager(repo=args.repo, pr_number=args.pr).post_and_collapse_reviews(
@@ -137,7 +147,7 @@ def main() -> int:
                 )
             except Exception as exc:
                 print(f"::warning::Could not post oversize notice: {exc}")
-        return 1
+        return 0
 
     safe, message = diff_guard.verify_safety(diff_content, max_bytes=args.max_diff_bytes)
     if not safe:

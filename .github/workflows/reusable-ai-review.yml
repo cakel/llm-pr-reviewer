@@ -20,7 +20,7 @@ on:
         type: string
         default: 'medium'
       max-diff-bytes:
-        description: 'Diff size limit in UTF-8 bytes; above it the review is refused and a PR comment asks for a local review'
+        description: 'Diff size limit in UTF-8 bytes; above it the review is skipped (decision=skipped_oversize) and a PR comment asks not to request more reviews'
         type: string
         default: '200000'
     secrets:

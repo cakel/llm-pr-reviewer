@@ -43,28 +43,36 @@ class TestOversizeDiff(unittest.TestCase):
 
     def run_main(self, diff, argv=()):
         from review_harness import main as m
-        with patch("sys.argv", self.ARGV + list(argv)), \
-             patch.object(m.GateKeeper, "is_authorized", return_value=(True, "ok")), \
-             patch.object(m.DiffGuard, "_git", return_value=diff), \
-             patch.object(m.DiffGuard, "verify_safety", return_value=(False, "stop here")) as verify, \
-             patch.object(m.CommentManager, "post_and_collapse_reviews") as post:
-            return m.main(), post, verify
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "github_output")
+            with patch("sys.argv", self.ARGV + list(argv)), patch.dict(os.environ, {"GITHUB_OUTPUT": out}), \
+                 patch.object(m.GateKeeper, "is_authorized", return_value=(True, "ok")), \
+                 patch.object(m.DiffGuard, "_git", return_value=diff), \
+                 patch.object(m.DiffGuard, "verify_safety", return_value=(False, "stop here")) as verify, \
+                 patch.object(m.CommentManager, "post_and_collapse_reviews") as post:
+                code = m.main()
+            self.output = open(out, encoding="utf-8").read() if os.path.exists(out) else ""
+        return code, post, verify
 
-    def test_oversize_fails_and_asks_for_local_review(self):
+    def test_oversize_is_neutral_and_says_stop(self):
         code, post, verify = self.run_main("+" + "가" * 10)   # 31 bytes > 30
-        self.assertEqual(code, 1)                               # fail closed: no review bypass by size
+        self.assertEqual(code, 0)                               # not red: a red check invites endless retries
+        self.assertIn("decision=skipped_oversize\n", self.output)  # never 'approve' — gates on decision still block
+        self.assertNotIn("approve", self.output)
         verify.assert_not_called()
         body = post.call_args.kwargs["review_comment_markdown"]
         self.assertEqual(post.call_args.kwargs["head_sha"], "b" * 40)
         self.assertIn("<!-- kiro-review-comment -->", body)    # same marker → older reviews get folded
         self.assertIn(f"kiro-review-sha:{'b' * 40}", body)
         self.assertIn("**31 bytes** > 한도 30 bytes", body)
-        self.assertIn("local_review.py", body)
+        self.assertIn("추가 리뷰를 요청하지 마세요", body)
+        self.assertIn("VERDICT: skipped_oversize", body)       # folded title shows it, not 'unknown'
         self.assertIn("--max-diff-bytes 31", body)
 
     def test_oversize_without_comment_posting(self):
         code, post, _ = self.run_main("+" + "가" * 10, ["--no-post-comment"])
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 0)
+        self.assertIn("decision=skipped_oversize\n", self.output)
         post.assert_not_called()
 
     def test_within_limit_reaches_safety_check_with_same_limit(self):
