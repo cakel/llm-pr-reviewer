@@ -67,6 +67,9 @@ runs:
       shell: bash
       env:
         PYTHONPATH: "${{ github.action_path }}:${{ env.PYTHONPATH }}"
+        # cwd is the PR checkout: without this, `python3 -m` puts it first on sys.path, so a PR file such as
+        # review_harness/ or json.py would run inside the reviewer (GH_TOKEN + CLI credentials). Python 3.11+.
+        PYTHONSAFEPATH: "1"
         GH_TOKEN: "${{ inputs.github-token }}"
         GITHUB_TOKEN: "${{ inputs.github-token }}"
         PR_NUMBER: "${{ github.event.pull_request.number || github.event.issue.number }}"

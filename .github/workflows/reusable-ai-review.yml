@@ -124,6 +124,9 @@ jobs:
         with:
           ref: ${{ needs.precheck.outputs.head_sha }}
           fetch-depth: 0
+          # The harness only runs local git; comments use GH_TOKEN. Keep the token out of .git/config,
+          # where the AI CLIs (run in this checkout) could read it.
+          persist-credentials: false
 
       - name: Verify checkout SHA
         run: |
