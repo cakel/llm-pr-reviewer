@@ -49,6 +49,26 @@ No findings.
         self.assertNotIn(">", review.splitlines()[0])  # leading > removed
         self.assertIn("### Summary", review)
 
+    def test_sanitize_strips_leading_narration(self):
+        summary_key = "KEY_ABC"
+        raw = f"""I'll review this PR diff carefully.
+Let me trace through the critical paths.
+Issue analysis: observe_browser_failures looks fine. Writing the review.
+
+### Summary
+좋은 변경입니다.
+
+### Findings
+No findings.
+
+{summary_key}={{"critical": 0, "major": 0, "minor": 0, "nit": 0}}
+"""
+        review, _, err = sanitize_and_parse_review(raw, summary_key)
+        self.assertIsNone(err)
+        self.assertTrue(review.startswith("### Summary"))
+        self.assertNotIn("I'll review", review)
+        self.assertNotIn("Writing the review", review)
+
     def test_sanitize_and_parse_missing_summary(self):
         raw = "Just text without summary line"
         _, _, err = sanitize_and_parse_review(raw, "KEY_MISSING")

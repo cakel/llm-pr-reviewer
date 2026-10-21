@@ -152,4 +152,11 @@ def sanitize_and_parse_review(
             error = "Review summary must be the final non-empty output line."
         review = review[:match.start()].strip()
 
+    # Drop any CLI reasoning/narration the engine streamed before the required
+    # first section; keep from the first '### Summary' heading onward. If no
+    # Summary heading is present (format violation), leave the text untouched.
+    head = re.search(r"(?m)^#{1,6}[ \t]*Summary\b", review)
+    if head:
+        review = review[head.start():].strip()
+
     return review, counts, error
