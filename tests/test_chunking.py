@@ -102,6 +102,20 @@ class TestMergeReviews(unittest.TestCase):
         self.assertIn("### Findings\nNo findings.", text)
         self.assertEqual(counts, zero)
 
+    def test_heading_variants_and_unparseable_parts_keep_findings(self):
+        major = {"critical": 0, "major": 1, "minor": 0, "nit": 0}
+        parts = [
+            ("## Summary\nvariant\n\n**Findings:**\n[MAJOR]\n- `a.py:1` variant bad", major),
+            ("free-form text only: `b.py:2` broken", major),
+            ("### Summary\nempty\n\n### Findings\nNo findings.", major),
+        ]
+        text, counts = merge_reviews(parts, [["a.py"], ["b.py"], ["c.py"]], 1)
+        self.assertEqual(counts["major"], 3)
+        self.assertIn("— variant", text)
+        self.assertIn("`a.py:1` variant bad", text)
+        self.assertIn("`b.py:2` broken", text)                     # kept verbatim, not dropped
+        self.assertIn("묶음 3/3 (`c.py`) (개수는 있지만", text)    # counted but no body: raw text kept
+
     def test_previous_findings_drop_undecidable(self):
         zero = {"critical": 0, "major": 0, "minor": 0, "nit": 0}
         parts = [
@@ -145,7 +159,6 @@ class TestReviewDiff(unittest.TestCase):
     DIFF = "".join(file_diff(f"f{i}.py", lines=20) for i in range(6))
 
     def setUp(self):
-        import tempfile
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 

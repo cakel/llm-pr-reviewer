@@ -7,7 +7,11 @@ and a hunk larger than the budget is split by lines (a single huge line, e.g. mi
 
 import re
 
-_SECTION_RE = re.compile(r"(?m)^###[ \t]+(Summary|Strengths|Findings|Previous findings)[ \t]*$")
+# Engines drift from the exact '### Name' form ('## Findings', '### Findings:', '**Findings**'); accept those too
+_SECTION_RE = re.compile(
+    r"(?im)^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(Summary|Strengths|Findings|Previous findings)(?:\*\*)?[ \t]*:?(?:\*\*)?[ \t]*$")
+_CANONICAL = {"summary": "Summary", "strengths": "Strengths", "findings": "Findings",
+              "previous findings": "Previous findings"}
 _NO_FINDINGS_RE = re.compile(r"^\W*no findings\W*$", re.IGNORECASE)
 SEVERITIES = ("critical", "major", "minor", "nit")
 
@@ -116,7 +120,7 @@ def _sections(review: str) -> dict[str, str]:
     for i, m in enumerate(matches):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(review)
         body = review[m.end():end].strip()
-        name = m.group(1)
+        name = _CANONICAL[m.group(1).lower()]
         out[name] = (out[name] + "\n\n" + body).strip() if name in out else body
     return out
 
@@ -145,8 +149,16 @@ def merge_reviews(parts: list[tuple[str, dict[str, int]]], part_files: list[list
 
     strengths = [s["Strengths"] for s in secs if s.get("Strengths", "").strip()]
 
-    findings = [s["Findings"] for s in secs
-                if s.get("Findings", "").strip() and not _NO_FINDINGS_RE.match(s["Findings"].strip())]
+    findings = []
+    for (text, part_counts), label, sec in zip(parts, labels, secs):
+        body = sec.get("Findings", "").strip()
+        if "Findings" not in sec and text.strip():
+            # Unparseable layout: keep the part's whole review so no counted finding goes missing
+            findings.append(f"#### {label} (형식을 해석하지 못해 원문을 그대로 붙입니다)\n{text.strip()}")
+        elif body and not _NO_FINDINGS_RE.match(body):
+            findings.append(body)
+        elif any(part_counts.get(k, 0) for k in SEVERITIES):
+            findings.append(f"#### {label} (개수는 있지만 Findings 본문이 비어 있어 원문을 그대로 붙입니다)\n{text.strip()}")
 
     previous, dropped = [], False
     for label, sec in zip(labels, secs):
