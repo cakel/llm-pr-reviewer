@@ -64,12 +64,14 @@ agy models
 
 리뷰는 러너 계정(예: `review-runner`)의 Claude Code 로그인으로 실행됩니다. 모델은 하네스의 `claude-model` 입력(기본 `sonnet` = 최신 Sonnet)으로 정해지므로 러너의 Claude Code 기본 모델 설정과 무관합니다.
 
+러너 계정은 보통 로그인 셸이 없는 서비스 계정(`nologin`)이라 `sudo -u review-runner -i`는 "This account is currently not available"로 거부됩니다. 셸 없이 claude를 직접 실행합니다:
+
 ```bash
-# 러너 계정으로 로그인 (대화형)
-sudo -u review-runner -i claude    # 세션 안에서 /login
+# 러너 계정으로 로그인 (대화형 — 직접 연 터미널에서 실행)
+sudo -u review-runner -H sh -c 'cd ~ && exec ~/.local/bin/claude auth login'
 
 # 로그인 상태 확인 — 하네스도 엔진 감지 때 이 값을 봅니다 (loggedIn=false면 claude를 건너뜀)
-sudo -u review-runner -i claude auth status --json
+sudo -u review-runner -H sh -c 'cd ~ && ~/.local/bin/claude auth status --json'
 ```
 
 ### E. Claude Code (`claude`) + Ollama / Cloud 모델 연동
