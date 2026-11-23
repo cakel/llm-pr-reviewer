@@ -269,6 +269,21 @@ class TestReviewDiff(unittest.TestCase):
         a = FakeAdapter("a", fail_on={2})
         self.assertIsNone(self.run_review({"a": a}, size(self.DIFF) // 3))
 
+    def test_engine_models_override_shared_model_per_engine(self):
+        seen = {}
+
+        class Record(FakeAdapter):
+            def run(self, prompt, work_dir, model=None, effort=None, timeout_sec=300):
+                seen[self.name] = model
+                if self.name == "kiro":
+                    return "quota exceeded", 1
+                return super().run(prompt, work_dir, model, effort, timeout_sec)
+
+        adapters = {"kiro": Record("kiro"), "claude": Record("claude")}
+        review_diff(self.DIFF, size(self.DIFF), ["kiro", "claude"], adapters, "D", "REVIEW_SUMMARY_k",
+                    self.tmp.name, "shared-model", None, engine_models={"claude": "sonnet"})
+        self.assertEqual(seen, {"kiro": "shared-model", "claude": "sonnet"})
+
     def test_prompt_cap_skips_engine(self):
         small, big = FakeAdapter("small", max_prompt_bytes=100), FakeAdapter("big")
         result = self.run_review({"small": small, "big": big}, size(self.DIFF))

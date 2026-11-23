@@ -60,7 +60,19 @@ agy --version
 agy models
 ```
 
-### D. Claude Code (`claude`) + Ollama / Cloud 모델 연동
+### D. Claude Code (`claude`) — Anthropic 로그인
+
+리뷰는 러너 계정(예: `review-runner`)의 Claude Code 로그인으로 실행됩니다. 모델은 하네스의 `claude-model` 입력(기본 `sonnet` = 최신 Sonnet)으로 정해지므로 러너의 Claude Code 기본 모델 설정과 무관합니다.
+
+```bash
+# 러너 계정으로 로그인 (대화형)
+sudo -u review-runner -i claude    # 세션 안에서 /login
+
+# 로그인 상태 확인 — 하네스도 엔진 감지 때 이 값을 봅니다 (loggedIn=false면 claude를 건너뜀)
+sudo -u review-runner -i claude auth status --json
+```
+
+### E. Claude Code (`claude`) + Ollama / Cloud 모델 연동
 Claude Code는 Anthropic의 공식 CLI이지만, `ANTHROPIC_BASE_URL` 환경 변수를 통해 Ollama의 Anthropic 호환 API(`/v1/messages`)와 직접 연결하여 저렴한 클라우드/로컬 모델을 활용할 수 있습니다.
 
 ```bash
@@ -77,3 +89,5 @@ export ANTHROPIC_API_KEY="ollama"
 # 4. 테스트 실행 (tools 비활성화로 텍스트 리뷰만 수행)
 claude -p "Say hello in Korean" --model "gemma4:31b-cloud" --tools ""
 ```
+
+> 이 구성에서는 `claude-model`을 Ollama 모델 이름으로 지정해야 합니다(예: `claude-model: 'gemma4:31b-cloud'`). 기본값 `sonnet`은 Ollama에 없는 모델입니다.

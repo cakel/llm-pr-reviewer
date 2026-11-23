@@ -15,7 +15,7 @@ from .comment_manager import CommentManager
 from .diff_guard import DiffGuard
 from .gate import GateKeeper
 from .prompt import build_fix_prompt, generate_tokens
-from .runner import ReviewResult, available_engines, review_diff, run_with_fallback
+from .runner import ReviewResult, available_engines, engine_model, review_diff, run_with_fallback
 from .state import StateManager
 
 
@@ -39,7 +39,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--comment-body", default=os.environ.get("COMMENT_BODY", ""))
     parser.add_argument("--workspace", default=os.environ.get("GITHUB_WORKSPACE", "."))
     parser.add_argument("--engines", default="kiro,codex,agy,claude")
-    parser.add_argument("--model", default=None)
+    parser.add_argument("--model", default=None, help="Model passed to every engine (unless the engine has its own below)")
+    parser.add_argument("--claude-model", default="sonnet",
+                        help="Model for the claude engine only (default: sonnet, the latest Sonnet). '' = use --model, "
+                             "or Claude Code's own default. --model would also reach kiro/codex/agy, which do not know Claude model names")
     parser.add_argument("--effort", default="medium")
     parser.add_argument("--state-file", default=None)
     parser.add_argument("--diff-file", default=None, help="Path to pre-verified diff file")
@@ -201,6 +204,8 @@ def main() -> int:
     state_mgr = StateManager(state_file_path=args.state_file)
     engines = available_engines(state_mgr.prioritize_engines(requested_engines), AVAILABLE_ADAPTERS)
 
+    engine_models = {"claude": args.claude_model} if args.claude_model else {}
+
     work_dir = Path("/tmp") / f"review_{args.pr}_{args.head[:7]}"
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -213,7 +218,8 @@ def main() -> int:
             user_guidance=guidance,
             sensitive_paths=sensitive_paths,
         )
-        got = run_with_fallback(prompt, engines, AVAILABLE_ADAPTERS, summary_key, str(work_dir), args.model, args.effort)
+        got = run_with_fallback(prompt, engines, AVAILABLE_ADAPTERS, summary_key, str(work_dir), args.model, args.effort,
+                                engine_models=engine_models)
         result = None if not got else ReviewResult(review=got[1], counts=got[2], engines=[got[0]], last_engine=got[0])
     else:
         result = review_diff(
@@ -225,6 +231,7 @@ def main() -> int:
             summary_key=summary_key,
             work_dir=str(work_dir),
             model=args.model,
+            engine_models=engine_models,
             effort=args.effort,
             previous_findings=previous_findings,
             user_guidance=guidance,
@@ -240,7 +247,8 @@ def main() -> int:
     cleaned_review = result.review
     counts = result.counts
 
-    model_tag = args.model if args.model else "auto"
+    # The model each engine that produced the review actually got ("auto" = the CLI's own default)
+    model_tag = ",".join(dict.fromkeys(engine_model(e, args.model, engine_models) or "auto" for e in result.engines))
     effort_tag = args.effort if args.effort else "medium"
 
     if is_fix_mode:

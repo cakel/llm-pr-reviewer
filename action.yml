@@ -12,9 +12,13 @@ inputs:
     required: false
     default: "kiro,codex,agy,claude"
   model:
-    description: "Model override for CLI engines"
+    description: "Model override for CLI engines (passed to every engine that has no model of its own)"
     required: false
     default: ""
+  claude-model:
+    description: "Model for the claude engine only. Default 'sonnet' (alias for the latest Sonnet); '' falls back to `model`, or Claude Code's own default on the runner"
+    required: false
+    default: "sonnet"
   effort:
     description: "Reasoning effort (e.g. low, medium, high)"
     required: false
@@ -100,6 +104,7 @@ runs:
           --workspace "${{ github.workspace }}" \
           --engines "${{ inputs.engines }}" \
           --model "${{ inputs.model }}" \
+          --claude-model "${{ inputs.claude-model }}" \
           --effort "${{ inputs.effort }}" \
           --max-diff-bytes "${{ inputs.max-diff-bytes }}" \
           --max-total-diff-bytes "${{ inputs.max-total-diff-bytes }}" \
