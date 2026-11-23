@@ -128,7 +128,7 @@ def main() -> int:
             return 1
     else:
         try:
-            diff_content = diff_guard._git("diff", "--no-ext-diff", "--no-textconv", f"{args.base}...{args.head}")
+            diff_content = diff_guard.get_diff()
         except Exception as exc:
             print(f"Failed to generate diff: {exc}", file=sys.stderr)
             return 1
