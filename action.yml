@@ -47,9 +47,17 @@ inputs:
     required: false
     default: ""
   max-diff-bytes:
-    description: "Diff size limit in UTF-8 bytes. Above it the review is skipped (decision=skipped_oversize, step succeeds) and a PR comment asks not to request more reviews"
+    description: "Largest diff (UTF-8 bytes) sent in one review call. A bigger diff is split by file into parts that are reviewed separately (in parallel) and merged. /fix is never split and stops here"
     required: false
     default: "200000"
+  max-total-diff-bytes:
+    description: "Total diff size limit in UTF-8 bytes. Above it the review is skipped (decision=skipped_oversize, step succeeds) and a PR comment asks not to request more reviews"
+    required: false
+    default: "1000000"
+  max-parallel:
+    description: "Cap on diff parts reviewed at once (0 = 4). The actual number follows the machine: min(cap, CPUs, available memory / 512 MiB, cgroup limits included), re-checked before each part starts"
+    required: false
+    default: "0"
 
 outputs:
   decision:
@@ -94,6 +102,8 @@ runs:
           --model "${{ inputs.model }}" \
           --effort "${{ inputs.effort }}" \
           --max-diff-bytes "${{ inputs.max-diff-bytes }}" \
+          --max-total-diff-bytes "${{ inputs.max-total-diff-bytes }}" \
+          --max-parallel "${{ inputs.max-parallel }}" \
           ${{ inputs.diff-file != '' && format('--diff-file {0}', inputs.diff-file) || '' }} \
           ${{ inputs.output-file != '' && format('--output-file {0}', inputs.output-file) || '' }} \
           ${{ inputs.summary-file != '' && format('--summary-file {0}', inputs.summary-file) || '' }} \

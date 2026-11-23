@@ -8,6 +8,9 @@ class EngineAdapter(ABC):
     """Abstract base class for all CLI review engines."""
 
     name: str
+    # Largest prompt (UTF-8 bytes) the CLI can take, or None. A CLI that only accepts the prompt as one argv
+    # string is capped by Linux MAX_ARG_STRLEN (128 KiB); a bigger prompt fails with E2BIG before it starts.
+    max_prompt_bytes: int | None = None
 
     @abstractmethod
     def detect(self) -> bool:

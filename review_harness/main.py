@@ -14,7 +14,8 @@ from .adapters.kiro import KiroAdapter
 from .comment_manager import CommentManager
 from .diff_guard import DiffGuard
 from .gate import GateKeeper
-from .prompt import build_fix_prompt, build_review_prompt, generate_tokens, sanitize_and_parse_review
+from .prompt import build_fix_prompt, generate_tokens
+from .runner import ReviewResult, available_engines, review_diff, run_with_fallback
 from .state import StateManager
 
 
@@ -43,7 +44,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state-file", default=None)
     parser.add_argument("--diff-file", default=None, help="Path to pre-verified diff file")
     parser.add_argument("--max-diff-bytes", type=int, default=DiffGuard.DEFAULT_MAX_DIFF_BYTES,
-                        help="Refuse automated review above this UTF-8 diff size and ask for a local review instead")
+                        help="Largest diff (UTF-8 bytes) sent in one review call; a bigger diff is split by file into parts")
+    parser.add_argument("--max-total-diff-bytes", type=int, default=DiffGuard.DEFAULT_MAX_TOTAL_DIFF_BYTES,
+                        help="Skip the review (skipped_oversize) above this total diff size; /fix is never split, so it stops at --max-diff-bytes")
+    parser.add_argument("--max-parallel", type=int, default=0,
+                        help="Cap on parts reviewed at once (0 = 4); the actual number follows CPUs and available memory, re-checked per part")
     parser.add_argument("--output-file", default=None, help="Save review comment markdown to specified file path")
     parser.add_argument("--summary-file", default=None, help="Save signed machine summary JSON to specified file path")
     parser.add_argument("--summary-key", default=os.environ.get("REVIEW_SUMMARY_KEY", None), help="Pre-shared secret key for machine summary signing and verification")
@@ -64,7 +69,7 @@ def build_oversize_comment(base: str, head: str, size: int, limit: int) -> str:
         "**추가 리뷰를 요청하지 마세요.** 코드를 고쳐 push하거나 `/review`를 다시 요청해도 같은 oversize 결과가 나옵니다"
         " (diff는 커밋이 쌓일수록 커집니다). 이것은 코드의 문제가 아니라 리뷰를 실시하지 않았다는 뜻이며, 승인도 아닙니다.\n\n"
         "필요하면 사람이 결정합니다: PR 분할, 저장소의 `max-diff-bytes` 조정, 또는 로컬 리뷰"
-        f" (`scripts/local_review.py --base {base[:7]} --head {head[:7]} --max-diff-bytes {size}`, llm-pr-reviewer 저장소).\n\n"
+        f" (`scripts/local_review.py --base {base[:7]} --head {head[:7]} --max-total-diff-bytes {size}`, llm-pr-reviewer 저장소).\n\n"
         "이전 AI 리뷰는 이 커밋을 보지 않았으므로 접어 두었습니다.\n"
         "<!-- VERDICT: skipped_oversize -->\n"
     )
@@ -125,16 +130,19 @@ def main() -> int:
             return 1
 
     size = len(diff_content.encode("utf-8"))
-    if size > args.max_diff_bytes:
+    # A review above --max-diff-bytes is split into parts; --max-total-diff-bytes caps the whole run (time and
+    # quota). /fix proposes patches across the whole diff, so it is never split.
+    limit = args.max_diff_bytes if is_fix_mode else max(args.max_diff_bytes, args.max_total_diff_bytes)
+    if size > limit:
         # Neutral, not a failure: a red check reads as "fix the code and push again", and an agent would
         # retry forever (the diff only grows). decision=skipped_oversize is never an approval, so a gate on
         # `decision` still blocks it. The PR comment says to stop, and folds older reviews so a stale
         # verdict of an earlier commit no longer reads as current.
-        print(f"Diff size exceeds limit ({size} > {args.max_diff_bytes} bytes); review skipped (neutral).")
-        notice = build_oversize_comment(args.base, args.head, size, args.max_diff_bytes)
+        print(f"Diff size exceeds limit ({size} > {limit} bytes); review skipped (neutral).")
+        notice = build_oversize_comment(args.base, args.head, size, limit)
         # The job still ends green, so put "not an approval" on the check itself: a warning annotation
         # next to the ✓ and the notice at the top of the job summary.
-        print(f"::warning title=AI 리뷰 중지 (승인 아님)::diff {size:,} bytes > 한도 {args.max_diff_bytes:,} bytes"
+        print(f"::warning title=AI 리뷰 중지 (승인 아님)::diff {size:,} bytes > 한도 {limit:,} bytes"
               " — 리뷰를 실시하지 않았습니다. 추가 리뷰를 요청하지 마세요.")
         step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
         if step_summary:
@@ -161,7 +169,7 @@ def main() -> int:
                 print(f"::warning::Could not post oversize notice: {exc}")
         return 0
 
-    safe, message = diff_guard.verify_safety(diff_content, max_bytes=args.max_diff_bytes)
+    safe, message = diff_guard.verify_safety(diff_content, max_bytes=limit)
     if not safe:
         print(f"Diff security check failed: {message}", file=sys.stderr)
         return 1
@@ -179,10 +187,18 @@ def main() -> int:
     # 4. Fetch Previous Findings
     previous_findings = comment_mgr.fetch_previous_findings(args.head)
 
-    # 5. Build Delimited Prompt
+    # 5. Review (split into parts above --max-diff-bytes), with engine fallback
     delimiter, generated_key = generate_tokens()
     summary_key = args.summary_key if args.summary_key else generated_key
     sensitive_paths = diff_guard.get_sensitive_paths()
+
+    requested_engines = [e.strip() for e in args.engines.split(",") if e.strip() in AVAILABLE_ADAPTERS]
+    state_mgr = StateManager(state_file_path=args.state_file)
+    engines = available_engines(state_mgr.prioritize_engines(requested_engines), AVAILABLE_ADAPTERS)
+
+    work_dir = Path("/tmp") / f"review_{args.pr}_{args.head[:7]}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+
     if is_fix_mode:
         prompt = build_fix_prompt(
             diff=diff_content,
@@ -192,58 +208,32 @@ def main() -> int:
             user_guidance=guidance,
             sensitive_paths=sensitive_paths,
         )
+        got = run_with_fallback(prompt, engines, AVAILABLE_ADAPTERS, summary_key, str(work_dir), args.model, args.effort)
+        result = None if not got else ReviewResult(review=got[1], counts=got[2], engines=[got[0]], last_engine=got[0])
     else:
-        prompt = build_review_prompt(
+        result = review_diff(
             diff=diff_content,
+            part_bytes=args.max_diff_bytes,
+            engines=engines,
+            adapters=AVAILABLE_ADAPTERS,
             delimiter=delimiter,
             summary_key=summary_key,
-            previous_findings=previous_findings,
-            user_guidance=guidance,
-            sensitive_paths=sensitive_paths,
-        )
-
-
-    # 6. Engine Selection & Fallback Loop
-    requested_engines = [e.strip() for e in args.engines.split(",") if e.strip() in AVAILABLE_ADAPTERS]
-    state_mgr = StateManager(state_file_path=args.state_file)
-    candidate_engines = state_mgr.prioritize_engines(requested_engines)
-
-    chosen_engine = None
-    cleaned_review = None
-    counts = None
-    work_dir = Path("/tmp") / f"review_{args.pr}_{args.head[:7]}"
-    work_dir.mkdir(parents=True, exist_ok=True)
-
-    for eng_name in candidate_engines:
-        adapter = AVAILABLE_ADAPTERS[eng_name]
-        if not adapter.detect():
-            print(f"Engine '{eng_name}' is not installed or not authenticated; skipping.")
-            continue
-
-        print(f"Attempting review with engine: {eng_name}...")
-        raw_output, retcode = adapter.run(
-            prompt=prompt,
             work_dir=str(work_dir),
             model=args.model,
             effort=args.effort,
+            previous_findings=previous_findings,
+            user_guidance=guidance,
+            sensitive_paths=sensitive_paths,
+            max_parallel=args.max_parallel,
         )
 
-        review_text, parsed_counts, parse_err = sanitize_and_parse_review(raw_output, summary_key)
-        if retcode == 0 and not parse_err:
-            chosen_engine = eng_name
-            cleaned_review = review_text
-            counts = parsed_counts
-            state_mgr.record_success(eng_name)
-            print(f"Engine '{eng_name}' completed review successfully.")
-            break
-        else:
-            err_kind = adapter.classify_error(raw_output, retcode)
-            reason_msg = parse_err or f"exited with code {retcode} ({err_kind})"
-            print(f"::warning::Engine '{eng_name}' failed ({reason_msg}). Trying fallback...")
-
-    if not chosen_engine or not cleaned_review or not counts:
+    if not result or not result.review:
         print("All candidate LLM review engines failed or produced invalid summaries.", file=sys.stderr)
         return 1
+    state_mgr.record_success(result.last_engine)
+    chosen_engine = ",".join(result.engines)
+    cleaned_review = result.review
+    counts = result.counts
 
     model_tag = args.model if args.model else "auto"
     effort_tag = args.effort if args.effort else "medium"
@@ -349,7 +339,8 @@ def main() -> int:
         f"{icon} **{heading}** (`VERDICT: {verdict}`)  \n"
         f"{counts_line}\n\n"
         "---\n"
-        f"<sub>Commit `{args.head[:7]}` · engine `{chosen_engine}` ({model_tag}, {effort_tag}) · [workflow run]({run_url}) · 새 커밋이 push되면 이 코멘트가 갱신됩니다.</sub>\n"
+        f"<sub>Commit `{args.head[:7]}` · engine `{chosen_engine}` ({model_tag}, {effort_tag})"
+        f"{f' · {result.parts}개 묶음으로 분할 리뷰' if result.parts > 1 else ''} · [workflow run]({run_url}) · 새 커밋이 push되면 이 코멘트가 갱신됩니다.</sub>\n"
     )
 
     if args.output_file:

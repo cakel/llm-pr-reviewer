@@ -8,6 +8,8 @@ from .base import EngineAdapter
 
 class AgyAdapter(EngineAdapter):
     name = "agy"
+    # agy reads the prompt only from argv (stdin is ignored), and one argv string is capped at 128 KiB on Linux
+    max_prompt_bytes = 120_000
 
     def detect(self) -> bool:
         if not shutil.which("agy"):
