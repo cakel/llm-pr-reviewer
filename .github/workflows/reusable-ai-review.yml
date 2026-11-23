@@ -149,7 +149,7 @@ jobs:
           echo "Checkout verified: $CHECKOUT_SHA"
 
       - name: Run LLM PR Reviewer
-        uses: cakel/llm-pr-reviewer@37ec826c99fd92aea9782e53689d2a71fff90157  # v1.3.0 (split + parallel review) — tags are mutable; callers pin this file by SHA, so pin the action too
+        uses: cakel/llm-pr-reviewer@691fcde8ced3c416096e9ef8c4e6e7fd479a47b1  # v1.3.1 (no empty 'Previous findings' section) — tags are mutable; callers pin this file by SHA, so pin the action too
         # Security note: This action runs in the same runner context.
         # For maximum isolation, use a dedicated runner with minimal permissions.
         with:
