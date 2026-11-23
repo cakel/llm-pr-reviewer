@@ -39,7 +39,7 @@ permissions:
 
 jobs:
   ai-review:
-    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
+    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@86406954488dc77bbf657cc639ba5bab86f366cf  # v1.3.0
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
     # runner 기본값: ubuntu-latest (precheck), self-hosted (ai-review)
@@ -63,7 +63,7 @@ permissions:
 
 jobs:
   ai-review:
-    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
+    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@86406954488dc77bbf657cc639ba5bab86f366cf  # v1.3.0
     with:
       runner: '["self-hosted", "llm-reviewer"]'  # precheck도 self-hosted 사용
     secrets:
@@ -87,15 +87,13 @@ jobs:
 
 ### 버전 핀
 
-프로덕션 환경에서는 태그 또는 commit SHA로 고정을 권장합니다:
+commit SHA로 고정합니다. 태그는 다른 커밋으로 옮겨질 수 있으므로 태그 이름은 주석으로만 남깁니다:
 
 ```yaml
-# SHA 사용 (권장)
-uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
-
-# SHA 사용 (가장 안전)
-uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
+uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@86406954488dc77bbf657cc639ba5bab86f366cf  # v1.3.0
 ```
+
+reusable workflow 안의 action도 SHA로 고정되어 있습니다(v1.3.0은 `37ec826`). 그래서 위 SHA 하나로 workflow와 리뷰 코드가 함께 고정됩니다. 버전 태그는 항상 "action 고정 SHA를 올린 커밋"에 붙습니다.
 
 ### 권한 요구사항
 
