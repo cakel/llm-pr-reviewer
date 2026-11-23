@@ -28,6 +28,9 @@ def parse_args():
                         help="Head commit or branch (default: HEAD). WORKTREE reviews uncommitted changes against --base, untracked files included")
     parser.add_argument("--engine", default="kiro", choices=["kiro", "codex", "agy", "claude"], help="LLM CLI engine")
     parser.add_argument("--model", default=None, help="Model override")
+    parser.add_argument("--claude-model", default="sonnet",
+                        help="Model for --engine claude; wins over --model, as in CI (default: sonnet, the latest Sonnet; "
+                             "'' = use --model, or Claude Code's own default)")
     parser.add_argument("--effort", default="medium", help="Reasoning effort")
     parser.add_argument("--previous-findings", default=None, help="Path to previous findings markdown or raw text")
     parser.add_argument("--user-guidance", default=None, help="Maintainer direction or specific instructions")
@@ -105,6 +108,7 @@ def main():
             summary_key=summary_key,
             work_dir=temp_dir,
             model=args.model,
+            engine_models={"claude": args.claude_model} if args.claude_model else None,
             effort=args.effort,
             previous_findings=previous_findings,
             user_guidance=args.user_guidance,
@@ -122,7 +126,8 @@ def main():
     icon = "🛑" if decision == "request_changes" else "✅"
 
     print("\n" + "=" * 60)
-    print(f"## 🤖 Local Adversarial Review ({args.engine.upper()} / {args.model or 'auto'}, {args.effort})")
+    shown_model = (args.claude_model if args.engine == "claude" else None) or args.model or "auto"
+    print(f"## 🤖 Local Adversarial Review ({args.engine.upper()} / {shown_model}, {args.effort})")
     print("=" * 60)
     print(cleaned_review)
     print("\n" + "-" * 60)

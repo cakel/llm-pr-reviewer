@@ -85,7 +85,8 @@ jobs:
 | :--- | :--- | :--- |
 | `github-token` | `${{ github.token }}` | GitHub API 호출 및 코멘트 작성을 위한 토큰 |
 | `engines` | `"kiro,codex,agy"` | 시도할 CLI 엔진 우선순위 (콤마 구분) |
-| `model` | `""` | 특정 모델 강제 지정 (기본값: 각 CLI의 디폴트 모델) |
+| `model` | `""` | 모든 엔진에 넘기는 모델 (기본값: 각 CLI의 디폴트 모델). 자기 모델 입력이 있는 엔진(claude)에는 그쪽이 우선 |
+| `claude-model` | `"sonnet"` | claude 엔진 전용 모델. `sonnet`은 최신 Sonnet 별칭. `""`이면 `model`, 그것도 없으면 러너의 Claude Code 기본 모델. `model`은 kiro·codex·agy에도 넘어가므로 Claude 모델 이름은 여기에 지정 |
 | `effort` | `"medium"` | 추론 강도 (`low`, `medium`, `high`) |
 | `state-file` | `~/.llm-pr-reviewer/state.json` | 성공 엔진 상태 파일 경로 |
 | `max-diff-bytes` | `"200000"` | 리뷰 1회에 보내는 diff 한도(UTF-8 바이트). 넘으면 파일 단위로 나눠 병렬 리뷰 후 합침. `/fix`는 나누지 않고 여기서 멈춤 |

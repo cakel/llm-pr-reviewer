@@ -152,10 +152,18 @@ def available_engines(candidates: list[str], adapters: dict[str, EngineAdapter])
     return ready
 
 
+def engine_model(name: str, model: str | None, engine_models: dict[str, str] | None) -> str | None:
+    """Model for one engine: its own entry in `engine_models` wins over the shared `model`."""
+    return (engine_models or {}).get(name) or model or None
+
+
 def run_with_fallback(prompt: str, engines: list[str], adapters: dict[str, EngineAdapter], summary_key: str,
                       work_dir: str, model: str | None, effort: str | None,
-                      label: str = "") -> tuple[str, str, dict[str, int]] | None:
-    """Try `engines` in order until one returns a parseable review. Returns (engine, review, counts)."""
+                      label: str = "", engine_models: dict[str, str] | None = None) -> tuple[str, str, dict[str, int]] | None:
+    """Try `engines` in order until one returns a parseable review. Returns (engine, review, counts).
+
+    `engine_models` maps an engine to its own model (e.g. {"claude": "sonnet"}); `model` is for the rest.
+    """
     prompt_bytes = len(prompt.encode("utf-8"))
     for name in engines:
         adapter = adapters[name]
@@ -164,7 +172,8 @@ def run_with_fallback(prompt: str, engines: list[str], adapters: dict[str, Engin
                   f"{adapter.max_prompt_bytes:,} bytes. Trying fallback...")
             continue
         print(f"Attempting review{label} with engine: {name}...")
-        raw_output, retcode = adapter.run(prompt=prompt, work_dir=work_dir, model=model, effort=effort)
+        raw_output, retcode = adapter.run(prompt=prompt, work_dir=work_dir,
+                                          model=engine_model(name, model, engine_models), effort=effort)
         review, counts, parse_err = sanitize_and_parse_review(raw_output, summary_key)
         if retcode == 0 and not parse_err:
             print(f"Engine '{name}' completed review{label} successfully.")
@@ -177,7 +186,8 @@ def run_with_fallback(prompt: str, engines: list[str], adapters: dict[str, Engin
 def review_diff(diff: str, part_bytes: int, engines: list[str], adapters: dict[str, EngineAdapter],
                 delimiter: str, summary_key: str, work_dir: str, model: str | None, effort: str | None,
                 previous_findings: str | None = None, user_guidance: str | None = None,
-                sensitive_paths: list[str] | None = None, max_parallel: int = 0) -> ReviewResult | None:
+                sensitive_paths: list[str] | None = None, max_parallel: int = 0,
+                engine_models: dict[str, str] | None = None) -> ReviewResult | None:
     """Review `diff` in one call, or split into parts of at most `part_bytes` and merge the reviews.
 
     Every part must succeed: a review that skipped part of the diff is not a review of the PR, so a part
@@ -190,7 +200,7 @@ def review_diff(diff: str, part_bytes: int, engines: list[str], adapters: dict[s
             build_review_prompt(diff=diff, delimiter=delimiter, summary_key=summary_key,
                                 previous_findings=previous_findings, user_guidance=user_guidance,
                                 sensitive_paths=sensitive_paths),
-            engines, adapters, summary_key, work_dir, model, effort)
+            engines, adapters, summary_key, work_dir, model, effort, engine_models=engine_models)
         if not got:
             return None
         engine, review, counts = got
@@ -238,7 +248,8 @@ def review_diff(diff: str, part_bytes: int, engines: list[str], adapters: dict[s
                 return None
             with lock:
                 tried = list(order)
-            got = run_with_fallback(prompt, tried, adapters, summary_key, str(part_dir), model, effort, label)
+            got = run_with_fallback(prompt, tried, adapters, summary_key, str(part_dir), model, effort, label,
+                                    engine_models=engine_models)
         if not got:
             failed.set()
             print(f"Every engine failed on part {i}/{len(parts)}; not merging a partial review.")

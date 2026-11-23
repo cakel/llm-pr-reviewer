@@ -1,5 +1,6 @@
 """Claude Code CLI adapter with default configuration respect and custom endpoint support."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -9,8 +10,16 @@ from .base import EngineAdapter
 class ClaudeAdapter(EngineAdapter):
     name = "claude"
 
+    # Auth that `claude auth status` (the claude.ai login) does not describe: an API key, a token, a proxy or
+    # a cloud provider. With one of these set, trust the run itself to report a failure.
+    NON_OAUTH_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+                     "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX")
+
     def detect(self) -> bool:
-        """Check if claude CLI binary is installed and executable."""
+        """Check that the claude CLI is installed and, for a claude.ai login, still signed in.
+
+        `--version` alone passed with an expired OAuth session; the review then failed at run time.
+        """
         if not shutil.which("claude"):
             return False
         try:
@@ -20,9 +29,21 @@ class ClaudeAdapter(EngineAdapter):
                 stderr=subprocess.DEVNULL,
                 timeout=5,
             )
-            return res.returncode == 0
+            if res.returncode != 0:
+                return False
         except Exception:
             return False
+        if any(os.environ.get(k) for k in self.NON_OAUTH_ENV):
+            return True
+        try:
+            status = subprocess.run(["claude", "auth", "status", "--json"],
+                                    capture_output=True, text=True, timeout=15)
+            info = json.loads(status.stdout)
+        except Exception:
+            return True   # a CLI without `auth status`: let the run decide (it falls back on failure)
+        if isinstance(info, dict) and "loggedIn" in info:
+            return bool(info["loggedIn"])
+        return True
 
     def run(
         self,

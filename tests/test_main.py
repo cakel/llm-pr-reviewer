@@ -32,6 +32,12 @@ class TestMainArgs(unittest.TestCase):
             self.assertEqual(args.summary_key, "SECRET_KEY_123")
             self.assertEqual(args.summary_file, "/tmp/summary.json")
 
+    def test_claude_model_defaults_to_sonnet(self):
+        with patch("sys.argv", ["main", "--repo", "owner/repo", "--pr", "1"]):
+            self.assertEqual(parse_args().claude_model, "sonnet")
+        with patch("sys.argv", ["main", "--repo", "owner/repo", "--pr", "1", "--claude-model", ""]):
+            self.assertEqual(parse_args().claude_model, "")
+
     def test_max_diff_bytes_flag(self):
         with patch("sys.argv", ["main", "--repo", "owner/repo", "--pr", "1"]):
             self.assertEqual(parse_args().max_diff_bytes, 200_000)
