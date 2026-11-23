@@ -59,8 +59,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_oversize_comment(base: str, head: str, size: int, limit: int) -> str:
-    """PR notice when the diff is too large for automated review."""
+def build_oversize_comment(base: str, head: str, size: int, limit: int, setting: str = "max-total-diff-bytes") -> str:
+    """PR notice when the diff is too large for automated review.
+
+    `setting` names the input that set `limit`: max-total-diff-bytes for a review (bigger diffs are split,
+    so raising max-diff-bytes would not help), max-diff-bytes for /fix (never split).
+    """
     return (
         "<!-- kiro-review-comment -->\n"
         f"<!-- kiro-review-sha:{head} -->\n"
@@ -68,7 +72,7 @@ def build_oversize_comment(base: str, head: str, size: int, limit: int) -> str:
         f"Commit `{head[:7]}` · diff **{size:,} bytes** > 한도 {limit:,} bytes\n\n"
         "**추가 리뷰를 요청하지 마세요.** 코드를 고쳐 push하거나 `/review`를 다시 요청해도 같은 oversize 결과가 나옵니다"
         " (diff는 커밋이 쌓일수록 커집니다). 이것은 코드의 문제가 아니라 리뷰를 실시하지 않았다는 뜻이며, 승인도 아닙니다.\n\n"
-        "필요하면 사람이 결정합니다: PR 분할, 저장소의 `max-diff-bytes` 조정, 또는 로컬 리뷰"
+        f"필요하면 사람이 결정합니다: PR 분할, 저장소의 `{setting}` 조정, 또는 로컬 리뷰"
         f" (`scripts/local_review.py --base {base[:7]} --head {head[:7]} --max-total-diff-bytes {size}`, llm-pr-reviewer 저장소).\n\n"
         "이전 AI 리뷰는 이 커밋을 보지 않았으므로 접어 두었습니다.\n"
         "<!-- VERDICT: skipped_oversize -->\n"
@@ -139,7 +143,8 @@ def main() -> int:
         # `decision` still blocks it. The PR comment says to stop, and folds older reviews so a stale
         # verdict of an earlier commit no longer reads as current.
         print(f"Diff size exceeds limit ({size} > {limit} bytes); review skipped (neutral).")
-        notice = build_oversize_comment(args.base, args.head, size, limit)
+        notice = build_oversize_comment(args.base, args.head, size, limit,
+                                        "max-diff-bytes" if is_fix_mode else "max-total-diff-bytes")
         # The job still ends green, so put "not an approval" on the check itself: a warning annotation
         # next to the ✓ and the notice at the top of the job summary.
         print(f"::warning title=AI 리뷰 중지 (승인 아님)::diff {size:,} bytes > 한도 {limit:,} bytes"

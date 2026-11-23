@@ -166,7 +166,8 @@ def merge_reviews(parts: list[tuple[str, dict[str, int]]], part_files: list[list
         if not body:
             continue
         # A part that does not contain a finding's file can only say ➖; keep the parts that could judge it.
-        kept = [ln for ln in body.splitlines() if "➖" not in ln]
+        # Only a line whose status is ➖ (no ✅/❌ on it) goes; a ✅/❌ line that mentions ➖ in its evidence stays.
+        kept = [ln for ln in body.splitlines() if "➖" not in ln or "✅" in ln or "❌" in ln]
         dropped = dropped or len(kept) != len(body.splitlines())
         kept_text = "\n".join(kept).strip()
         if kept_text:
