@@ -19,6 +19,10 @@ on:
         description: 'Reasoning effort level'
         type: string
         default: 'medium'
+      claude-model:
+        description: "Model for the claude engine only (default 'sonnet' = latest Sonnet; '' = Claude Code's default on the runner)"
+        type: string
+        default: 'sonnet'
       max-diff-bytes:
         description: 'Largest diff (UTF-8 bytes) per review call; a bigger diff is split by file into parts reviewed in parallel and merged. /fix is never split and stops here'
         type: string
@@ -149,13 +153,14 @@ jobs:
           echo "Checkout verified: $CHECKOUT_SHA"
 
       - name: Run LLM PR Reviewer
-        uses: cakel/llm-pr-reviewer@691fcde8ced3c416096e9ef8c4e6e7fd479a47b1  # v1.3.1 (no empty 'Previous findings' section) — tags are mutable; callers pin this file by SHA, so pin the action too
+        uses: cakel/llm-pr-reviewer@35bdace317219e9f4eee40fba645ad93c17e8622  # v1.3.2 (claude on Sonnet, login check; local WORKTREE fix) — tags are mutable; callers pin this file by SHA, so pin the action too
         # Security note: This action runs in the same runner context.
         # For maximum isolation, use a dedicated runner with minimal permissions.
         with:
           github-token: ${{ secrets.token }}
           engines: ${{ inputs.engines }}
           effort: ${{ inputs.effort }}
+          claude-model: ${{ inputs.claude-model }}
           max-diff-bytes: ${{ inputs.max-diff-bytes }}
           max-total-diff-bytes: ${{ inputs.max-total-diff-bytes }}
           max-parallel: ${{ inputs.max-parallel }}
