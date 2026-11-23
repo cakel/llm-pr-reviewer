@@ -15,7 +15,7 @@ PR Event (opened / sync) OR Comment (/review)
                      │ (통과 시)
                      ▼
          [ 2. Diff Security Guard ]
-         크기 제한 (200KB), 서브모듈/속성 변조, 탈옥 패턴 검사
+         크기 제한 (리뷰 1회 200KB, 초과 시 묶음 분할·병렬 리뷰, 전체 1MB), 서브모듈/속성 변조, 탈옥 패턴 검사
                      │
                      ▼
       [ 3. PR Description Update ]

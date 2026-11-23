@@ -41,8 +41,9 @@ class ClaudeAdapter(EngineAdapter):
                 env["ANTHROPIC_API_KEY"] = "ollama"
             env["CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT"] = "1"
 
+        # Prompt goes on stdin: as an argv string it fails with E2BIG above 128 KiB (Linux MAX_ARG_STRLEN)
         cmd = [
-            "claude", "-p", prompt,
+            "claude", "-p",
             "--tools", "",
             "--no-session-persistence",
         ]
@@ -55,6 +56,7 @@ class ClaudeAdapter(EngineAdapter):
         try:
             res = subprocess.run(
                 cmd,
+                input=prompt,
                 cwd=work_dir,
                 env=env,
                 capture_output=True,

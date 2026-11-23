@@ -16,7 +16,8 @@ from review_harness.adapters.codex import CodexAdapter
 from review_harness.adapters.agy import AgyAdapter
 from review_harness.adapters.claude import ClaudeAdapter
 from review_harness.diff_guard import DiffGuard
-from review_harness.prompt import build_review_prompt, generate_tokens, sanitize_and_parse_review
+from review_harness.prompt import generate_tokens
+from review_harness.runner import review_diff
 
 
 def parse_args():
@@ -30,7 +31,11 @@ def parse_args():
     parser.add_argument("--previous-findings", default=None, help="Path to previous findings markdown or raw text")
     parser.add_argument("--user-guidance", default=None, help="Maintainer direction or specific instructions")
     parser.add_argument("--max-diff-bytes", type=int, default=DiffGuard.DEFAULT_MAX_DIFF_BYTES,
-                        help="Diff size limit in UTF-8 bytes (raise it for a PR the CI reviewer refused as too large)")
+                        help="Largest diff (UTF-8 bytes) sent in one review call; a bigger diff is split by file into parts")
+    parser.add_argument("--max-total-diff-bytes", type=int, default=DiffGuard.DEFAULT_MAX_TOTAL_DIFF_BYTES,
+                        help="Refuse above this total diff size (raise it for a PR the CI reviewer refused as too large)")
+    parser.add_argument("--max-parallel", type=int, default=0,
+                        help="Cap on parts reviewed at once (0 = 4); the actual number follows CPUs and available memory, re-checked per part")
     return parser.parse_args()
 
 
@@ -56,7 +61,7 @@ def main():
         return 0
 
     print(f"📦 Diff size: {len(diff_content.encode('utf-8'))} bytes")
-    safe, message = diff_guard.verify_safety(diff_content, max_bytes=args.max_diff_bytes)
+    safe, message = diff_guard.verify_safety(diff_content, max_bytes=max(args.max_diff_bytes, args.max_total_diff_bytes))
     if not safe:
         print(f"❌ Pre-review diff security guard rejected the diff: {message}", file=sys.stderr)
         return 2
@@ -86,33 +91,31 @@ def main():
         print(f"❌ Engine '{args.engine}' is not detected or available in PATH.", file=sys.stderr)
         return 2
 
-    # 3. Construct Prompt
+    # 3. Review (split into parts above --max-diff-bytes, reviewed in parallel)
     delimiter, summary_key = generate_tokens()
-    prompt = build_review_prompt(
-        diff=diff_content,
-        delimiter=delimiter,
-        summary_key=summary_key,
-        previous_findings=previous_findings,
-        user_guidance=args.user_guidance,
-        sensitive_paths=sensitive_paths,
-    )
-
-    # 4. Execute Engine
     print(f"🚀 Invoking {args.engine} engine for adversarial analysis...")
     with tempfile.TemporaryDirectory() as temp_dir:
-        raw_output, exit_code = adapter.run(
-            prompt=prompt,
+        result = review_diff(
+            diff=diff_content,
+            part_bytes=args.max_diff_bytes,
+            engines=[args.engine],
+            adapters=adapters,
+            delimiter=delimiter,
+            summary_key=summary_key,
             work_dir=temp_dir,
             model=args.model,
             effort=args.effort,
+            previous_findings=previous_findings,
+            user_guidance=args.user_guidance,
+            sensitive_paths=sensitive_paths,
+            max_parallel=args.max_parallel,
         )
 
-    if exit_code != 0:
-        print(f"❌ Engine '{args.engine}' failed with exit code {exit_code}:\n{raw_output}", file=sys.stderr)
+    if not result:
+        print(f"❌ Engine '{args.engine}' failed or produced an invalid review.", file=sys.stderr)
         return 2
+    cleaned_review, counts = result.review, result.counts
 
-    # 5. Sanitize and Parse Review
-    cleaned_review, counts, err = sanitize_and_parse_review(raw_output, summary_key)
     blocking = counts.get("critical", 0) + counts.get("major", 0)
     decision = "request_changes" if blocking > 0 else "approve"
     icon = "🛑" if decision == "request_changes" else "✅"

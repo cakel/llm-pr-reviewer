@@ -10,7 +10,8 @@ from pathlib import Path
 class DiffGuard:
     """Enforces boundaries on untrusted diffs and produces change summaries."""
 
-    DEFAULT_MAX_DIFF_BYTES = 200_000
+    DEFAULT_MAX_DIFF_BYTES = 200_000          # per review call; a bigger diff is split into parts
+    DEFAULT_MAX_TOTAL_DIFF_BYTES = 1_000_000  # whole review; above it the review is skipped (skipped_oversize)
 
     # Base64 encoded Python regex:
     # "kiro_review_summary_json|self_review_summary_json|end untrusted pull request diff|ignore\s+(all|any|previous)\s+instructions|disregard\s+(all|any|previous)|system\s+prompt"
