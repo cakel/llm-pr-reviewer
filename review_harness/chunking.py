@@ -125,6 +125,20 @@ def _sections(review: str) -> dict[str, str]:
     return out
 
 
+def drop_section(review: str, name: str) -> str:
+    """Remove every `name` section (heading through the next recognised heading) from one review."""
+    matches = list(_SECTION_RE.finditer(review))
+    keep, pos = [], 0
+    for i, m in enumerate(matches):
+        if _CANONICAL[m.group(1).lower()] != name:
+            continue
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(review)
+        keep.append(review[pos:m.start()])
+        pos = end
+    keep.append(review[pos:])
+    return "".join(keep).strip()
+
+
 def _label(index: int, total: int, files: list[str], shown: int = 3) -> str:
     names = ", ".join(f"`{f.replace('`', chr(39))}`" for f in files[:shown])
     more = f" 외 {len(files) - shown}개" if len(files) > shown else ""
@@ -132,8 +146,12 @@ def _label(index: int, total: int, files: list[str], shown: int = 3) -> str:
 
 
 def merge_reviews(parts: list[tuple[str, dict[str, int]]], part_files: list[list[str]],
-                  total_bytes: int) -> tuple[str, dict[str, int]]:
-    """Merge per-part reviews into one review in the standard section layout, summing the counts."""
+                  total_bytes: int, has_previous: bool = False) -> tuple[str, dict[str, int]]:
+    """Merge per-part reviews into one review in the standard section layout, summing the counts.
+
+    '### Previous findings' is written only when `has_previous` (a previous-findings block was given to the
+    parts); engines sometimes add the section anyway, saying no block was supplied.
+    """
     total = len(parts)
     counts = {k: sum(c.get(k, 0) for _, c in parts) for k in SEVERITIES}
     secs = [_sections(text) for text, _ in parts]
@@ -176,10 +194,12 @@ def merge_reviews(parts: list[tuple[str, dict[str, int]]], part_files: list[list
     out = ["### Summary", "\n\n".join(summary), "", "### Strengths",
            "\n".join(strengths) if strengths else "- (없음)", "", "### Findings",
            "\n\n".join(findings) if findings else "No findings."]
-    if any("Previous findings" in s for s in secs):
+    if has_previous:
         out += ["", "### Previous findings"]
         if previous:
             out.append("\n\n".join(previous))
+        elif not dropped:
+            out.append("- ➖ 어느 묶음도 이전 지적의 상태를 적지 않았습니다.")
         if dropped:
             out.append("<sub>➖ 판단불가 항목은 해당 파일이 없는 묶음에서 나온 것이라 생략했습니다."
                        " 위에 없는 이전 지적은 어느 묶음에서도 판단하지 못한 것입니다.</sub>")

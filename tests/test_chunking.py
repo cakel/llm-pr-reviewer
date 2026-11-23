@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from review_harness.adapters.base import EngineAdapter
-from review_harness.chunking import files_in, merge_reviews, split_diff
+from review_harness.chunking import drop_section, files_in, merge_reviews, split_diff
 from review_harness import runner
 from review_harness.runner import plan_workers, review_diff
 
@@ -116,6 +116,26 @@ class TestMergeReviews(unittest.TestCase):
         self.assertIn("`b.py:2` broken", text)                     # kept verbatim, not dropped
         self.assertIn("묶음 3/3 (`c.py`) (개수는 있지만", text)    # counted but no body: raw text kept
 
+    def test_previous_section_only_when_previous_findings_were_given(self):
+        zero = {"critical": 0, "major": 0, "minor": 0, "nit": 0}
+        stray = [(review("a", "No findings."), zero),
+                 (review("b", "No findings.", "이전 findings 블록이 제공되지 않았습니다."), zero)]
+        text, _ = merge_reviews(stray, [["a.py"], ["b.py"]], 1)
+        self.assertNotIn("Previous findings", text)
+        self.assertNotIn("제공되지 않았습니다", text)
+        text, _ = merge_reviews([(review("a", "No findings."), zero)] * 2, [["a.py"], ["b.py"]], 1, has_previous=True)
+        self.assertIn("### Previous findings\n- ➖ 어느 묶음도", text)
+
+    def test_drop_section(self):
+        text = review("s", "[NIT]\n- `x` y", "이전 findings 블록이 제공되지 않았습니다.")
+        dropped = drop_section(text, "Previous findings")
+        self.assertNotIn("Previous findings", dropped)
+        self.assertNotIn("제공되지", dropped)
+        self.assertTrue(dropped.endswith("- `x` y"))
+        middle = "### Summary\ns\n\n## Previous findings\nstray\n\n### Findings\nNo findings."
+        self.assertEqual(drop_section(middle, "Previous findings"), "### Summary\ns\n\n### Findings\nNo findings.")
+        self.assertEqual(drop_section("### Summary\ns", "Previous findings"), "### Summary\ns")
+
     def test_previous_findings_drop_undecidable(self):
         zero = {"critical": 0, "major": 0, "minor": 0, "nit": 0}
         parts = [
@@ -123,7 +143,7 @@ class TestMergeReviews(unittest.TestCase):
             (review("b", "No findings.", "- `a.py` 문제: ➖ 판단불가 (없음)\n- `b.py` 문제: ❌ 미해결"
                                           "\n- `c.py` 문제: ✅ 해결됨 (이전엔 ➖였음)"), zero),
         ]
-        text, _ = merge_reviews(parts, [["a.py"], ["b.py"]], 1)
+        text, _ = merge_reviews(parts, [["a.py"], ["b.py"]], 1, has_previous=True)
         prev = text.split("### Previous findings", 1)[1]
         self.assertIn("✅ 해결됨", prev)
         self.assertIn("❌ 미해결", prev)
@@ -167,6 +187,18 @@ class TestReviewDiff(unittest.TestCase):
     def run_review(self, adapters, part_bytes, max_parallel=1):
         return review_diff(self.DIFF, part_bytes, list(adapters), adapters, "DELIM", "REVIEW_SUMMARY_k",
                            self.tmp.name, None, None, previous_findings="- old", max_parallel=max_parallel)
+
+    def test_single_call_drops_stray_previous_section(self):
+        class Stray(FakeAdapter):
+            def run(self, prompt, *a, **k):
+                out, code = super().run(prompt, *a, **k)
+                body, summary = out.rsplit("\n", 2)[0], out.rsplit("\n", 2)[1]
+                return body + "\n\n### Previous findings\n이전 findings 블록이 제공되지 않았습니다.\n" + summary + "\n", code
+
+        for prev, expected in ((None, False), ("- old", True)):
+            result = review_diff(self.DIFF, size(self.DIFF), ["a"], {"a": Stray("a")}, "D", "REVIEW_SUMMARY_k",
+                                 self.tmp.name, None, None, previous_findings=prev)
+            self.assertEqual("### Previous findings" in result.review, expected, prev)
 
     def test_single_call_when_within_limit(self):
         a = FakeAdapter("a")

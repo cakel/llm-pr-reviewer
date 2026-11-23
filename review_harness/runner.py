@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .adapters.base import EngineAdapter
-from .chunking import files_in, merge_reviews, split_diff
+from .chunking import drop_section, files_in, merge_reviews, split_diff
 from .prompt import build_review_prompt, sanitize_and_parse_review
 
 
@@ -194,6 +194,9 @@ def review_diff(diff: str, part_bytes: int, engines: list[str], adapters: dict[s
         if not got:
             return None
         engine, review, counts = got
+        if not previous_findings:
+            # Engines sometimes add the section anyway ("no previous block was supplied"); it says nothing
+            review = drop_section(review, "Previous findings")
         return ReviewResult(review=review, counts=counts, engines=[engine], last_engine=engine)
 
     part_files = [files_in(p) for p in parts]
@@ -252,5 +255,5 @@ def review_diff(diff: str, part_bytes: int, engines: list[str], adapters: dict[s
     used = list(dict.fromkeys(engine for engine, _, _ in outcomes))
     results = [(review, counts) for _, review, counts in outcomes]
 
-    review, counts = merge_reviews(results, part_files, total_bytes)
+    review, counts = merge_reviews(results, part_files, total_bytes, has_previous=bool(previous_findings))
     return ReviewResult(review=review, counts=counts, engines=used, parts=len(parts), last_engine=order[0])
