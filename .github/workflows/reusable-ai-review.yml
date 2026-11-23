@@ -20,9 +20,17 @@ on:
         type: string
         default: 'medium'
       max-diff-bytes:
-        description: 'Diff size limit in UTF-8 bytes; above it the review is skipped (decision=skipped_oversize) and a PR comment asks not to request more reviews'
+        description: 'Largest diff (UTF-8 bytes) per review call; a bigger diff is split by file into parts reviewed in parallel and merged. /fix is never split and stops here'
         type: string
         default: '200000'
+      max-total-diff-bytes:
+        description: 'Total diff size limit in UTF-8 bytes; above it the review is skipped (decision=skipped_oversize) and a PR comment asks not to request more reviews'
+        type: string
+        default: '1000000'
+      max-parallel:
+        description: 'Cap on diff parts reviewed at once (0 = 4); the actual number follows the runner CPUs and memory (cgroup limits included), re-checked per part'
+        type: string
+        default: '0'
     secrets:
       token:
         description: 'GitHub token for PR comments and reviews'
@@ -117,7 +125,9 @@ jobs:
     needs: precheck
     if: needs.precheck.outputs.should_review == 'true'
     runs-on: ${{ fromJSON(inputs.review-runner) }}
-    timeout-minutes: 15
+    # A split review runs one engine call (up to 5 min, plus fallbacks) per part; parts run in parallel, but a
+    # small or busy runner may take them one at a time
+    timeout-minutes: 30
     steps:
       - name: Checkout PR head
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -139,7 +149,7 @@ jobs:
           echo "Checkout verified: $CHECKOUT_SHA"
 
       - name: Run LLM PR Reviewer
-        uses: cakel/llm-pr-reviewer@43a8a139584770f49748637099682c556d36c729  # v1.2.1 — tags are mutable; callers pin this file by SHA, so pin the action too
+        uses: cakel/llm-pr-reviewer@37ec826c99fd92aea9782e53689d2a71fff90157  # v1.3.0 (split + parallel review) — tags are mutable; callers pin this file by SHA, so pin the action too
         # Security note: This action runs in the same runner context.
         # For maximum isolation, use a dedicated runner with minimal permissions.
         with:
@@ -147,3 +157,5 @@ jobs:
           engines: ${{ inputs.engines }}
           effort: ${{ inputs.effort }}
           max-diff-bytes: ${{ inputs.max-diff-bytes }}
+          max-total-diff-bytes: ${{ inputs.max-total-diff-bytes }}
+          max-parallel: ${{ inputs.max-parallel }}

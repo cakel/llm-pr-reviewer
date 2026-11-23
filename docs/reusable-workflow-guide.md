@@ -17,6 +17,9 @@ precheck(권한 검증) + ai-review가 포함된 재사용 가능한 워크플�
 | `review-runner` | `["self-hosted", "llm-reviewer"]` | ai-review job 러너 (CLI 인증 필요) |
 | `engines` | `kiro,codex,agy,claude` | 시도할 CLI 엔진 목록 |
 | `effort` | `medium` | 추론 노력 수준 |
+| `max-diff-bytes` | `200000` | 리뷰 1회에 보내는 diff 한도(UTF-8 바이트). 넘으면 파일 단위로 나눠 병렬 리뷰 후 합칩니다. `/fix`는 나누지 않고 여기서 멈춥니다 |
+| `max-total-diff-bytes` | `1000000` | 전체 diff 한도. 넘으면 리뷰를 하지 않고 `skipped_oversize`(승인 아님)로 끝납니다 |
+| `max-parallel` | `0` | 동시에 리뷰할 묶음 수 상한(0 = 4). 실제 수는 러너의 CPU·메모리(cgroup 포함)에 맞춰 정해지고 묶음마다 다시 확인합니다 |
 
 ## 공개 저장소 설정
 
