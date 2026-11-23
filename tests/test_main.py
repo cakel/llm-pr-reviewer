@@ -74,6 +74,7 @@ class TestOversizeDiff(unittest.TestCase):
         self.assertIn("추가 리뷰를 요청하지 마세요", body)
         self.assertIn("VERDICT: skipped_oversize", body)       # folded title shows it, not 'unknown'
         self.assertIn("--max-total-diff-bytes 31", body)
+        self.assertIn("저장소의 `max-total-diff-bytes` 조정", body)     # raising max-diff-bytes only changes part size
         # The job ends green, so the check itself must say "not an approval"
         self.assertIn("::warning title=AI 리뷰 중지 (승인 아님)::diff 31 bytes > 한도 30 bytes", self.stdout)
         self.assertIn("추가 리뷰를 요청하지 마세요", self.summary)
@@ -98,6 +99,7 @@ class TestOversizeDiff(unittest.TestCase):
         self.assertIn("decision=skipped_oversize\n", self.output)
         verify.assert_not_called()
         self.assertIn("한도 20 bytes", post.call_args.kwargs["review_comment_markdown"])
+        self.assertIn("저장소의 `max-diff-bytes` 조정", post.call_args.kwargs["review_comment_markdown"])
 
     def test_max_total_defaults_to_one_megabyte(self):
         with patch("sys.argv", ["main", "--repo", "owner/repo", "--pr", "1"]):

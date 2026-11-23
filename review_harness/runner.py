@@ -206,23 +206,32 @@ def review_diff(diff: str, part_bytes: int, engines: list[str], adapters: dict[s
     print(f"Reviewing {len(parts)} parts with {workers} parallel worker(s) "
           f"(cpus {available_cpus()}, memory available {'unknown' if mem is None else f'{mem // 2**20:,} MiB'}).")
 
+    # A sensitive path no part's headers name (e.g. a git-quoted non-ASCII path) is flagged in every part:
+    # dropping the alert is the unsafe direction.
+    unmatched = [f for f in (sensitive_paths or []) if f not in all_files]
+
+    def part_sensitive(i: int) -> list[str]:
+        return [f for f in (sensitive_paths or []) if f in part_files[i - 1]] + unmatched
+
     admission = Admission(available_cpus())
     lock = threading.Lock()
     order = list(engines)           # shared: the engine that last succeeded goes first for the next part
     failed = threading.Event()
 
     def review_part(i: int, part: str) -> tuple[str, str, dict[str, int]] | None:
-        if failed.is_set():
-            return None                 # another part already failed every engine; don't spend more quota
+        if failed.is_set():             # another part already failed every engine; don't spend more quota
+            print(f"Part {i}/{len(parts)} not started: another part failed on every engine.")
+            return None
         label = f" (part {i}/{len(parts)}, {len(part.encode('utf-8')):,} bytes)"
         prompt = build_review_prompt(diff=part, delimiter=delimiter, summary_key=summary_key,
                                      previous_findings=previous_findings, user_guidance=user_guidance,
-                                     sensitive_paths=[f for f in (sensitive_paths or []) if f in part_files[i - 1]],
+                                     sensitive_paths=part_sensitive(i),
                                      part=(i, len(parts)), all_files=all_files)
         part_dir = Path(work_dir) / f"part{i}"     # concurrent CLI sessions must not share a cwd
         part_dir.mkdir(parents=True, exist_ok=True)
         with admission:
             if failed.is_set():
+                print(f"Part {i}/{len(parts)} not started: another part failed on every engine.")
                 return None
             with lock:
                 tried = list(order)

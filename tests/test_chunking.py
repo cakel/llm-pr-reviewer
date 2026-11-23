@@ -120,13 +120,15 @@ class TestMergeReviews(unittest.TestCase):
         zero = {"critical": 0, "major": 0, "minor": 0, "nit": 0}
         parts = [
             (review("a", "No findings.", "- `a.py` 문제: ✅ 해결됨 (수정됨)\n- `b.py` 문제: ➖ 판단불가 (없음)"), zero),
-            (review("b", "No findings.", "- `a.py` 문제: ➖ 판단불가 (없음)\n- `b.py` 문제: ❌ 미해결"), zero),
+            (review("b", "No findings.", "- `a.py` 문제: ➖ 판단불가 (없음)\n- `b.py` 문제: ❌ 미해결"
+                                          "\n- `c.py` 문제: ✅ 해결됨 (이전엔 ➖였음)"), zero),
         ]
         text, _ = merge_reviews(parts, [["a.py"], ["b.py"]], 1)
         prev = text.split("### Previous findings", 1)[1]
         self.assertIn("✅ 해결됨", prev)
         self.assertIn("❌ 미해결", prev)
         self.assertNotIn("➖ 판단불가 (없음)", prev)
+        self.assertIn("✅ 해결됨 (이전엔 ➖였음)", prev)            # ➖ in the evidence does not drop a ✅ line
         self.assertIn("#### 묶음 1/2", prev)
 
 
@@ -208,6 +210,28 @@ class TestReviewDiff(unittest.TestCase):
                     self.tmp.name, None, None, sensitive_paths=["f0.py"], max_parallel=1)
         alerts = ["SECURITY SENSITIVE FILES ALERT" in p for p in prompts]
         self.assertEqual(alerts, [True] + [False] * (len(prompts) - 1))
+
+    def test_unmatched_sensitive_path_alerts_every_part(self):
+        prompts = []
+
+        class Capture(FakeAdapter):
+            def run(self, prompt, *a, **k):
+                prompts.append(prompt)
+                return super().run(prompt, *a, **k)
+
+        quoted = '"\\355\\225\\234.env"'      # how git prints a non-ASCII path; no part header names it
+        review_diff(self.DIFF, size(self.DIFF) // 3, ["a"], {"a": Capture("a")}, "DELIM", "REVIEW_SUMMARY_k",
+                    self.tmp.name, None, None, sensitive_paths=[quoted], max_parallel=1)
+        self.assertGreater(len(prompts), 1)
+        self.assertTrue(all("SECURITY SENSITIVE FILES ALERT" in p for p in prompts))
+
+    def test_failed_part_logs_parts_not_started(self):
+        import contextlib, io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertIsNone(self.run_review({"a": FakeAdapter("a", fail_on={1})}, size(self.DIFF) // 3))
+        self.assertIn("Part 2/", out.getvalue())
+        self.assertIn("not started: another part failed on every engine", out.getvalue())
 
     def test_any_failed_part_fails_the_review(self):
         a = FakeAdapter("a", fail_on={2})
