@@ -38,23 +38,62 @@ class DiffGuard:
         raw_pattern = base64.b64decode(self.CONTROL_PATTERN_B64).decode("utf-8")
         self.control_pattern = re.compile(raw_pattern, re.IGNORECASE)
 
-    def get_sensitive_paths(self) -> list[str]:
-        """Detect any modified files matching security-sensitive paths."""
-        try:
-            raw_names = self._git("diff", "--name-only", f"{self.base_sha}...{self.head_sha}")
-            files = [f.strip() for f in raw_names.splitlines() if f.strip()]
-            sensitive = []
-            for f in files:
-                for pattern in self.SENSITIVE_PATTERNS:
-                    if re.search(pattern, f, re.IGNORECASE):
-                        sensitive.append(f)
-                        break
-            return sensitive
-        except Exception:
+    # --head values meaning "the working tree" (local review of uncommitted changes)
+    WORKTREE_HEADS = ("WORKTREE", "")
+
+    @property
+    def is_worktree(self) -> bool:
+        return self.head_sha is None or self.head_sha in self.WORKTREE_HEADS
+
+    def _range(self) -> list[str]:
+        """Revision arguments for every `git diff` here: `<base>` for the working tree, else `<base>...<head>`."""
+        return [self.base_sha] if self.is_worktree else [f"{self.base_sha}...{self.head_sha}"]
+
+    def untracked_files(self) -> list[str]:
+        """New files not yet added (and not ignored); only the working tree has them."""
+        if not self.is_worktree:
             return []
+        out = self._git("ls-files", "--others", "--exclude-standard", "-z")
+        # A nested repository is listed as 'dir/'; it is not a file to diff
+        return [p for p in out.split("\0") if p and not p.endswith("/")]
 
+    def get_diff(self, max_untracked_bytes: int | None = None) -> str:
+        """The diff to review. For the working tree it also covers untracked files, as new-file diffs.
 
-    def _git(self, *args: str) -> str:
+        An untracked file bigger than `max_untracked_bytes` raises ValueError before it is read: the review
+        would refuse that diff anyway, and a stray dataset or build output must not be loaded into memory.
+        """
+        diff = self._git("diff", "--no-ext-diff", "--no-textconv", *self._range())
+        for path in self.untracked_files():
+            if max_untracked_bytes is not None:
+                size = os.lstat(os.path.join(self.workspace, path)).st_size   # a symlink is diffed as its target path
+                if size > max_untracked_bytes:
+                    raise ValueError(f"untracked file '{path}' is {size:,} bytes > {max_untracked_bytes:,}; "
+                                     "add it to .gitignore or move it out of the working tree")
+            # --no-index exits 1 when the files differ, which is always the case against /dev/null
+            diff += self._git("diff", "--no-index", "--no-ext-diff", "--no-textconv", "--", "/dev/null", path,
+                              ok_codes=(0, 1))
+        return diff
+
+    def changed_paths(self) -> list[str]:
+        """Every path the diff touches, untracked files included."""
+        names = self._git("diff", "--name-only", "-z", *self._range())
+        return [p for p in names.split("\0") if p] + self.untracked_files()
+
+    def get_sensitive_paths(self) -> list[str]:
+        """Detect any modified files matching security-sensitive paths.
+
+        A git error propagates: returning [] would silently drop the sensitive-file alert.
+        """
+        sensitive = []
+        for f in self.changed_paths():
+            for pattern in self.SENSITIVE_PATTERNS:
+                if re.search(pattern, f, re.IGNORECASE):
+                    sensitive.append(f)
+                    break
+        return sensitive
+
+    def _git(self, *args: str, ok_codes: tuple[int, ...] = (0,)) -> str:
         env = {
             **os.environ,
             "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -68,8 +107,9 @@ class DiffGuard:
             env=env,
             capture_output=True,
             text=True,
-            check=True,
         )
+        if res.returncode not in ok_codes:
+            raise subprocess.CalledProcessError(res.returncode, res.args, output=res.stdout, stderr=res.stderr)
         return res.stdout
 
     def verify_safety(self, diff_content: str, max_bytes: int = DEFAULT_MAX_DIFF_BYTES) -> tuple[bool, str]:
@@ -82,13 +122,12 @@ class DiffGuard:
             return False, "Diff is empty; refusing review."
 
         # 2. Submodule check
-        raw_diff = self._git("diff", "--raw", f"{self.base_sha}...{self.head_sha}")
+        raw_diff = self._git("diff", "--raw", *self._range())
         if re.search(r"^:160000 ", raw_diff, re.MULTILINE):
             return False, "Submodule change detected; refusing automated review."
 
         # 3. Attributes check (reject PRs modifying .gitattributes)
-        diff_names_z = self._git("diff", "--name-only", "-z", f"{self.base_sha}...{self.head_sha}")
-        for path in diff_names_z.split("\0"):
+        for path in self.changed_paths():
             if path.strip().endswith(".gitattributes"):
                 return False, "PR modifies .gitattributes; refusing automated review."
 
@@ -115,7 +154,7 @@ class DiffGuard:
             ["git", "-C", self.workspace, "-c", "core.attributesFile=/dev/null",
              "-c", "diff.external=", "-c", "diff.textconv=", "diff",
              "--no-ext-diff", "--no-textconv", "--numstat", "-z",
-             f"{self.base_sha}...{self.head_sha}"],
+             *self._range()],
             env=env,
             capture_output=True,
             check=True,

@@ -24,7 +24,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Local Adversarial Reviewer")
     parser.add_argument("--workspace", default=os.getcwd(), help="Target repository workspace")
     parser.add_argument("--base", default="origin/main", help="Base commit or branch (default: origin/main)")
-    parser.add_argument("--head", default="HEAD", help="Head commit or branch (default: HEAD)")
+    parser.add_argument("--head", default="HEAD",
+                        help="Head commit or branch (default: HEAD). WORKTREE reviews uncommitted changes against --base, untracked files included")
     parser.add_argument("--engine", default="kiro", choices=["kiro", "codex", "agy", "claude"], help="LLM CLI engine")
     parser.add_argument("--model", default=None, help="Model override")
     parser.add_argument("--effort", default="medium", help="Reasoning effort")
@@ -48,10 +49,10 @@ def main():
     # 1. Diff Extraction & Safety Guard
     diff_guard = DiffGuard(workspace=workspace, base_sha=args.base, head_sha=args.head)
     try:
-        if args.head in ("WORKTREE", "", None):
-            diff_content = diff_guard._git("diff", "--no-ext-diff", "--no-textconv", args.base)
-        else:
-            diff_content = diff_guard._git("diff", "--no-ext-diff", "--no-textconv", f"{args.base}...{args.head}")
+        diff_content = diff_guard.get_diff(max_untracked_bytes=max(args.max_diff_bytes, args.max_total_diff_bytes))
+        untracked = diff_guard.untracked_files()
+        if untracked:
+            print(f"   Untracked files included as new files: {len(untracked)}")
     except Exception as exc:
         print(f"❌ Failed to extract git diff: {exc}", file=sys.stderr)
         return 2
