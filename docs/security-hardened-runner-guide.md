@@ -198,7 +198,7 @@ jobs:
         (github.event_name == 'issue_comment' && github.event.issue.pull_request && (startsWith(github.event.comment.body, '/review') || startsWith(github.event.comment.body, '/fix')))
       )
     runs-on: [self-hosted, Linux, X64, profittrailer-review-isolated]
-    timeout-minutes: 15
+    timeout-minutes: 30   # 큰 diff는 묶음으로 나눠 리뷰하므로 엔진 호출이 여러 번일 수 있음
     env:
       KIRO_HOME: /var/lib/llm-reviewer/.kiro
     steps:
@@ -211,7 +211,7 @@ jobs:
 
       - name: Run Multi-CLI LLM Reviewer
         # 반드시 불변 커밋 SHA로 핀하여 공급망 공격 차단
-        uses: cakel/llm-pr-reviewer@ecdb04bd2df4e86f933aaebf35ce6acc6e0bf7df # v0.2.0
+        uses: cakel/llm-pr-reviewer@86406954488dc77bbf657cc639ba5bab86f366cf # v1.3.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           engines: "kiro,codex,agy,claude"

@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   ai-review:
-    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
+    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@86406954488dc77bbf657cc639ba5bab86f366cf  # v1.3.0
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -51,7 +51,7 @@ permissions:
 
 jobs:
   ai-review:
-    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@b764845ad7f07d4c39b7b3471acac5bd03174d11  # v1.0.0
+    uses: cakel/llm-pr-reviewer/.github/workflows/reusable-ai-review.yml@86406954488dc77bbf657cc639ba5bab86f366cf  # v1.3.0
     with:
       runner: '["self-hosted", "llm-reviewer"]'
     secrets:
